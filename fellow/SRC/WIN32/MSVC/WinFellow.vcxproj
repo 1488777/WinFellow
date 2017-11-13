@@ -574,6 +574,7 @@ PowerShell.exe ..\Scripts\GitWCRev.ps1 -InputFileName ..\MSVC\GUI_versioninfo-wc
     </ClCompile>
     <ClCompile Include="..\..\C\interrupt.c" />
     <ClCompile Include="..\..\C\LineExactSprites.cpp" />
+    <ClCompile Include="..\..\C\RDBHandler.cpp" />
     <ClCompile Include="..\..\c\rtc.cpp" />
     <ClCompile Include="..\..\c\RtcOkiMsm6242rs.cpp" />
     <ClCompile Include="..\..\C\SpriteMerger.cpp" />
@@ -1632,6 +1633,7 @@ PowerShell.exe ..\Scripts\GitWCRev.ps1 -InputFileName ..\MSVC\GUI_versioninfo-wc
     <ClInclude Include="..\..\INCLUDE\LineExactSprites.h" />
     <ClInclude Include="..\..\INCLUDE\LISTTREE.H" />
     <ClInclude Include="..\..\INCLUDE\modrip.h" />
+    <ClInclude Include="..\..\INCLUDE\RDBHandler.h" />
     <ClInclude Include="..\..\include\rtc.h" />
     <ClInclude Include="..\..\include\RtcOkiMsm6242rs.h" />
     <ClInclude Include="..\..\INCLUDE\SpriteMerger.h" />

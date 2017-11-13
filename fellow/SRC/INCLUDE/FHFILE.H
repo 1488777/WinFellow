@@ -1,6 +1,8 @@
 #ifndef FHFILE_H
 #define FHFILE_H
 
+#include "RDBHandler.h"
+
 #define FHFILE_MAX_DEVICES 20
 
 typedef enum {
@@ -23,6 +25,7 @@ typedef struct {
   FILE *F;
   ULO size;
   bool hasRigidDiskBlock;
+  RDBHeader *rdb;
   ULO lowCylinder;
   ULO highCylinder;
 } fhfile_dev;
