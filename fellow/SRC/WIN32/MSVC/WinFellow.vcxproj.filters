@@ -438,6 +438,9 @@
     <ClCompile Include="..\..\C\RDBHandler.cpp">
       <Filter>core C Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\C\Hunks.cpp">
+      <Filter>core C Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\INCLUDE\BLIT.H">
@@ -840,6 +843,9 @@
       <Filter>core C Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\INCLUDE\RDBHandler.h">
+      <Filter>core C Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\INCLUDE\Hunks.h">
       <Filter>core C Header Files</Filter>
     </ClInclude>
   </ItemGroup>

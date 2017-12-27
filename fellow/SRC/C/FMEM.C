@@ -566,12 +566,7 @@ const STR *memory_kickimage_versionstrings[14] = {
   {
     if ((address & 0xffffff) == 0xf40000)
     {
-      switch (data>>16)
-      {
-        case 0x0001:
-          fhfileDo(data);
-	  break;
-      }
+      fhfileDo(data);
     }
   }
 

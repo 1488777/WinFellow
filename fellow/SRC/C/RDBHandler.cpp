@@ -2,62 +2,6 @@
 #include "FELLOW.H"
 #include "RDBHandler.h"
 
-ULO GetByteswappedLongAt(UBY *base, ULO address)
-{
-  ULO value = (base[address] << 24) | (base[address + 1] << 16) | (base[address + 2] << 8) | base[address + 3];
-  return value;
-}
-
-void ParseHunks(RDBFilesystemHandler *fs)
-{
-  ULO address = 0;
-  ULO hunk_type = GetByteswappedLongAt(fs->Data, address);
-  address += 4;
-
-  fellowAddLog("Hunk type: %X\n", hunk_type);
-
-  ULO stringLength = GetByteswappedLongAt(fs->Data, address);
-  address += 4;
-
-  while (stringLength != 0)
-  {
-    fellowAddLog("String of length %u longs\n", stringLength);
-    address += 4 * stringLength;
-
-    stringLength = GetByteswappedLongAt(fs->Data, address);
-    address += 4;
-  }
-
-  ULO tableSize = GetByteswappedLongAt(fs->Data, address);
-  address += 4;
-
-  fellowAddLog("Table size: %u\n", tableSize);
-
-  ULO firstHunk = GetByteswappedLongAt(fs->Data, address);
-  address += 4;
-
-  fellowAddLog("First hunk: %u\n", firstHunk);
-
-  ULO lastHunk = GetByteswappedLongAt(fs->Data, address);
-  address += 4;
-
-  fellowAddLog("Last hunk: %u\n", lastHunk);
-
-  for (ULO i = firstHunk; i <= lastHunk; i++)
-  {
-    ULO hunkSize = GetByteswappedLongAt(fs->Data, address);
-    address += 4;
-
-    ULO hunkFlags = hunkSize >> 30;
-    if (hunkFlags == 3)
-    {
-      ULO additionalFlag = GetByteswappedLongAt(fs->Data, address);
-      address += 4;
-    }
-    fellowAddLog("Hunk %u size: %u %s\n", i, hunkSize & 0x3fffffff, (hunkFlags == 0) ? "Any memory" : ((hunkFlags == 1) ? "Chip memory" : ((hunkFlags == 2) ? "Fast memory" : "Additional memory flags")));
-  }
-}
-
 RDBLSegBlock::RDBLSegBlock()
   : SizeInLongs(0),
   CheckSum(0),
@@ -106,15 +50,15 @@ void RDBLSegBlock::Log()
 
 RDBFilesystemHandler::RDBFilesystemHandler()
   : Size(0),
-  Data(nullptr)
+    RawData(nullptr)
 {
 }
 
 RDBFilesystemHandler::~RDBFilesystemHandler()
 {
-  if (Data != nullptr)
+  if (RawData != nullptr)
   {
-    delete[] Data;
+    delete RawData;
   }
 }
 
@@ -122,7 +66,7 @@ RDBFilesystemHandler::~RDBFilesystemHandler()
 #include "fileops.h"
 void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize)
 {
-  std::list<RDBLSegBlock*> blocks;
+  std::vector<RDBLSegBlock*> blocks;
   LON nextBlock = blockChainStart;
 
   fellowAddLog("Reading filesystem handler from block-chain at %d\n", blockChainStart);
@@ -142,22 +86,24 @@ void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockS
   fellowAddLog("%d LSegBlocks read\n", blocks.size());
   fellowAddLog("Total filesystem size was %d bytes\n", Size);
 
-  Data = new UBY[Size];
+  RawData = new UBY[Size];
   ULO nextCopyPosition = 0;
   for (auto block : blocks)
   {
     LON size = block->GetDataSize();
-    memcpy(Data + nextCopyPosition, block->Data, size);
+    memcpy(RawData + nextCopyPosition, block->Data, size);
     nextCopyPosition += size;
   }
 
   blocks.clear();
 
+  HunkParser hunkParser(RawData);
+  bool result = hunkParser.Parse(Hunks);
 
   STR fname[256];
   fileopsGetGenericFileName(fname, "WinFellow", "filesystem.bin");
   FILE *W = fopen(fname, "wb");
-  fwrite(Data, 1, Size, W);
+  fwrite(RawData, 1, Size, W);
   fclose(W);
 
 }
@@ -186,6 +132,11 @@ void RDBFilesystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSi
   DnSegListBlock = RDBHandler::ReadULOFromFile(F, index + 72);
   DnGlobalVec = RDBHandler::ReadULOFromFile(F, index + 76);
 
+  for (int i = 0; i < 23; i++)
+  {
+    Reserved2[i] = RDBHandler::ReadULOFromFile(F, index + i + 80);
+  }
+
   FilesystemHandler.ReadFromFile(F, DnSegListBlock, blockSize);
 }
 
@@ -193,26 +144,51 @@ void RDBFilesystemHeader::Log()
 {
   fellowAddLog("Filesystem header block\n");
   fellowAddLog("-----------------------------------------\n");
-  fellowAddLog("0   - id:                     FSHD\n");
-  fellowAddLog("4   - size in longs:          %u\n", SizeInLongs);
-  fellowAddLog("8   - checksum:               %d\n", CheckSum);
-  fellowAddLog("12  - host id:                %u\n", HostId);
-  fellowAddLog("16  - next:                   %d\n", Next);
-  fellowAddLog("20  - flags:                  %X\n", Flags);
-  fellowAddLog("32  - dos type:               %.4s\n", DosType);
-  fellowAddLog("36  - version:              0x%X ie %d.%d\n", Version, (Version & 0xffff0000) >> 16, Version & 0xffff);
-  fellowAddLog("40  - patch flags:          0x%X\n", PatchFlags);
+  fellowAddLog("0  - id:                     FSHD\n");
+  fellowAddLog("4  - size in longs:          %u\n", SizeInLongs);
+  fellowAddLog("8  - checksum:               %d\n", CheckSum);
+  fellowAddLog("12 - host id:                %u\n", HostId);
+  fellowAddLog("16 - next:                   %d\n", Next);
+  fellowAddLog("20 - flags:                  %X\n", Flags);
+  fellowAddLog("32 - dos type:               %.4s\n", DosType);
+  fellowAddLog("36 - version:              0x%X ie %d.%d\n", Version, (Version & 0xffff0000) >> 16, Version & 0xffff);
+  fellowAddLog("40 - patch flags:          0x%X\n", PatchFlags);
   fellowAddLog("Device node:-----------------------------\n");
-  fellowAddLog("44  - type:                   %u\n", DnType);
-  fellowAddLog("48  - task:                   %u\n", DnTask);
-  fellowAddLog("52  - lock:                   %u\n", DnLock);
-  fellowAddLog("56  - handler:                %u\n", DnHandler);
-  fellowAddLog("60  - stack size:             %u\n", DnStackSize);
-  fellowAddLog("64  - priority:               %u\n", DnPriority);
-  fellowAddLog("68  - startup:                %u\n", DnStartup);
-  fellowAddLog("72  - seg list block:         %u\n", DnSegListBlock);
-  fellowAddLog("76  - global vec:             %u\n\n", DnGlobalVec);
+  fellowAddLog("44 - type:                   %u\n", DnType);
+  fellowAddLog("48 - task:                   %u\n", DnTask);
+  fellowAddLog("52 - lock:                   %u\n", DnLock);
+  fellowAddLog("56 - handler:                %u\n", DnHandler);
+  fellowAddLog("60 - stack size:             %u\n", DnStackSize);
+  fellowAddLog("64 - priority:               %u\n", DnPriority);
+  fellowAddLog("68 - startup:                %u\n", DnStartup);
+  fellowAddLog("72 - seg list block:         %u\n", DnSegListBlock);
+  fellowAddLog("76 - global vec:             %u\n\n", DnGlobalVec);
 }
+
+RDBFilesystemHeader::RDBFilesystemHeader() :
+  SizeInLongs(0),
+  CheckSum(0),
+  HostId(0),
+  Next(0),
+  Flags(0),
+  Version(0),
+  PatchFlags(0),
+  DnType(0),
+  DnTask(0),
+  DnLock(0),
+  DnHandler(0),
+  DnStackSize(0),
+  DnPriority(0),
+  DnStartup(0),
+  DnSegListBlock(0),
+  DnGlobalVec(0)
+{
+}
+
+RDBFilesystemHeader::~RDBFilesystemHeader()
+{  
+}
+
 
 void RDBHandler::ReadCharsFromFile(FILE *F, off_t offset, STR* destination, size_t count)
 {
@@ -337,10 +313,5 @@ RDBHeader* RDBHandler::GetDriveInformation(FILE *F)
   RDBHeader* rdb = new RDBHeader();
   rdb->ReadFromFile(F);
   rdb->Log();
-
-  ParseHunks(&rdb->FilesystemHeaders.front()->FilesystemHandler);
-
   return rdb;
 }
-
-

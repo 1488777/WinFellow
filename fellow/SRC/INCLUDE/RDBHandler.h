@@ -1,9 +1,9 @@
 #ifndef RDBHANDLER_H
 #define RDBHANDLER_H
 
-#include <list>
-
 #include "DEFS.H"
+#include "Hunks.h"
+#include <vector>
 
 struct RDBLSegBlock
 {
@@ -25,7 +25,8 @@ struct RDBLSegBlock
 struct RDBFilesystemHandler
 {
   ULO Size;
-  UBY *Data;
+  UBY *RawData;
+  std::vector<HunkPtr> Hunks;
 
   RDBFilesystemHandler();
   ~RDBFilesystemHandler();
@@ -54,11 +55,12 @@ struct RDBFilesystemHeader
   ULO DnStartup;
   ULO DnSegListBlock;
   ULO DnGlobalVec;
+  ULO Reserved2[23];
 
   RDBFilesystemHandler FilesystemHandler;
 
-  RDBFilesystemHeader() {}
-  ~RDBFilesystemHeader() {}
+  RDBFilesystemHeader();
+  ~RDBFilesystemHeader();
 
   void ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize);
   void Log();
@@ -101,7 +103,7 @@ struct RDBHeader
   STR ControllerProduct[16];
   STR ControllerRevision[4];
 
-  std::list<RDBFilesystemHeader*> FilesystemHeaders;
+  std::vector<RDBFilesystemHeader*> FilesystemHeaders;
 
   void ReadFromFile(FILE *F);
   void Log();

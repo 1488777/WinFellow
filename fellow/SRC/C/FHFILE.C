@@ -1,4 +1,3 @@
-/* @(#) $Id: FHFILE.C,v 1.12 2012-07-14 18:50:50 peschau Exp $ */
 /*=========================================================================*/
 /* Fellow                                                                  */
 /*                                                                         */
@@ -37,6 +36,7 @@
 #endif
 
 #include <list>
+#include <vector>
 
 /*====================*/
 /* fhfile.device      */
@@ -62,6 +62,7 @@
 
 
 fhfile_dev fhfile_devs[FHFILE_MAX_DEVICES];
+std::vector<RDBFilesystemHeader*> fhfile_rdb_filesystems;
 ULO fhfile_romstart;
 ULO fhfile_bootcode;
 ULO fhfile_configdev;
@@ -119,7 +120,6 @@ static void fhfileInitializeHardfile(ULO index) {
         // RDB configured hardfile
         fhfile_devs[index].rdb = RDBHandler::GetDriveInformation(fhfile_devs[index].F);
         fhfileSetPhysicalGeometryFromRigidDiskBlock(&fhfile_devs[index]);
-
         fhfile_devs[index].size = size;
         fhfile_devs[index].status = FHFILE_HDF;
       }
@@ -302,8 +302,6 @@ static void fhfileWriteProt(ULO index) {
   memoryWriteLong(fhfile_devs[index].readonly, cpuGetAReg(1) + 32);
 }
 
-
-
 /*======================================================*/
 /* fhfileDiag native callback                           */
 /*                                                      */
@@ -311,7 +309,7 @@ static void fhfileWriteProt(ULO index) {
 /* For later use when filling out the bootnode          */
 /*======================================================*/
 
-void fhfileDiag(void)
+void fhfileDoDiag()
 {
   fhfile_configdev = cpuGetAReg(3);
   memoryDmemSetLongNoCounter(FHFILE_MAX_DEVICES, 4088);
@@ -319,43 +317,51 @@ void fhfileDiag(void)
   cpuSetDReg(0, 1);
 }
 
-
 /*======================================*/
 /* Native callbacks for device commands */
 /*======================================*/
 
-static void fhfileOpen(void) {
-  if (cpuGetDReg(0) < FHFILE_MAX_DEVICES) {
+void fhfileDoOpen()
+{
+  if (cpuGetDReg(0) < FHFILE_MAX_DEVICES)
+  {
     memoryWriteByte(7, cpuGetAReg(1) + 8);                     /* ln_type (NT_REPLYMSG) */
     memoryWriteByte(0, cpuGetAReg(1) + 31);                    /* io_error */
     memoryWriteLong(cpuGetDReg(0), cpuGetAReg(1) + 24);                 /* io_unit */
     memoryWriteLong(memoryReadLong(cpuGetAReg(6) + 32) + 1, cpuGetAReg(6) + 32);  /* LIB_OPENCNT */
     cpuSetDReg(0, 0);                              /* ? */
   }
-  else {
+  else
+  {
     memoryWriteLong(-1, cpuGetAReg(1) + 20);            
     memoryWriteByte(-1, cpuGetAReg(1) + 31);                   /* io_error */
     cpuSetDReg(0, -1);                             /* ? */
   }
 }
 
-static void fhfileClose(void) {
+void fhfileDoClose()
+{
   memoryWriteLong(memoryReadLong(cpuGetAReg(6) + 32) - 1, cpuGetAReg(6) + 32);    /* LIB_OPENCNT */
   cpuSetDReg(0, 0);                                /* ? */
 }
 
-static void fhfileExpunge(void) {
+void fhfileDoExpunge()
+{
   cpuSetDReg(0, 0);                                /* ? */
 }
 
-static void fhfileNULL(void) {}
+void fhfileDoNULL()
+{
+}
 
-static void fhfileBeginIO(void) {
+void fhfileDoBeginIO()
+{
   BYT error = 0;
   ULO unit = memoryReadLong(cpuGetAReg(1) + 24);
 
   UWO cmd = memoryReadWord(cpuGetAReg(1) + 28);
-  switch (cmd) {
+  switch (cmd)
+  {
     case 2:
       error = fhfileRead(unit);
       break;
@@ -392,11 +398,178 @@ static void fhfileBeginIO(void) {
   memoryWriteByte(error, cpuGetAReg(1) + 31); /* ln_error */
 }
 
-
-static void fhfileAbortIO(void) {
+void fhfileDoAbortIO()
+{
   cpuSetDReg(0, -3);
 }
 
+// RDB support functions, native callbacks
+
+// 1 - Returns the number of RDB filesystem headers in D0
+void fhfileDoGetFileSystemCount()
+{
+  ULO filesystemCount = fhfile_rdb_filesystems.size();
+
+  fellowAddLog("fhfileDoGetFilesystemCount() - Returns %d\n", filesystemCount);
+
+  cpuSetDReg(0, filesystemCount);
+}
+
+void fhfileDoGetFileSystemHunkCount()
+{
+  ULO fsIndex = cpuGetDReg(1);
+  ULO hunkCount = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks.size();
+  cpuSetDReg(0, hunkCount);
+}
+
+void fhfileDoGetFileSystemHunkSize()
+{
+  ULO fsIndex = cpuGetDReg(1);
+  ULO hunkIndex = cpuGetDReg(2);
+  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords();
+  cpuSetDReg(0, hunkSize);
+}
+
+void fhfileDoRelocateHunk()
+{
+  ULO destination = cpuGetDReg(0);
+  ULO fsIndex = cpuGetDReg(1);
+  ULO hunkIndex = cpuGetDReg(2);
+
+  UBY *relocatedHunkData = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
+  memoryWriteLong(0, destination);  // No next segment
+
+  if (relocatedHunkData == nullptr)
+  {
+    fellowAddLog("fhfile: RDB Filesystem - fhfileDoRelocateHunk() called for hunk with no data.\n");
+    return;
+  }
+
+  ULO size = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+
+  for (int i = 0; i < size; i++)
+  {
+    memoryWriteByte(relocatedHunkData[i], destination + i + 4);
+  }
+  delete relocatedHunkData;
+}
+
+void fhfileDoInitializeFileSystemEntry()
+{
+  ULO index = cpuGetDReg(1);
+  ULO fsEntry = cpuGetDReg(0);
+
+  RDBFilesystemHeader *fsHeader = fhfile_rdb_filesystems[index];
+
+  for (int i = 0; i < 4; i++)
+  {
+    memoryWriteByte(fsHeader->DosType[i], fsEntry + 14 + i);
+  }
+  memoryWriteLong(fsHeader->Version, fsEntry + 18);
+  memoryWriteLong(fsHeader->PatchFlags, fsEntry + 22);
+  memoryWriteLong(fsHeader->DnType, fsEntry + 26);
+  memoryWriteLong(fsHeader->DnTask, fsEntry + 30);
+  memoryWriteLong(fsHeader->DnLock, fsEntry + 34);
+  memoryWriteLong(fsHeader->DnHandler, fsEntry + 38);
+  memoryWriteLong(fsHeader->DnStackSize, fsEntry + 42);
+  memoryWriteLong(fsHeader->DnPriority, fsEntry + 46);
+  memoryWriteLong(fsHeader->DnStartup, fsEntry + 50);
+  memoryWriteLong(fsHeader->DnSegListBlock, fsEntry + 54);
+  memoryWriteLong(fsHeader->DnGlobalVec, fsEntry + 58);
+
+  for (int i = 0; i < 23; i++)
+  {
+    memoryWriteLong(fsHeader->Reserved2[i], fsEntry + 62 + i*4);
+  }
+}
+
+std::string fhfileLogGetStringFromMemory(ULO address)
+{
+  std::string name;
+  if (address == 0)
+  {
+    return std::string();
+  }
+  char c = memoryReadByte(address++);
+  while (c != 0)
+  {
+    name.push_back((c == '\n' ? '.' : c));
+    c = memoryReadByte(address++);
+  }
+  return name;
+}
+
+// D0 - pointer to resource list
+void fhfileDoLogAvailableResources()
+{
+  fellowAddLog("fhfileDoLogAvailableResources()\n");
+
+  ULO execBase = memoryReadLong(4);
+  ULO rsListHeader = memoryReadLong(execBase + 0x150);
+
+  fellowAddLog("Resource list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", rsListHeader, memoryReadLong(rsListHeader), memoryReadLong(rsListHeader + 4), memoryReadLong(rsListHeader + 8), memoryReadByte(rsListHeader + 9));
+  if (rsListHeader == memoryReadLong(rsListHeader + 8))
+  {
+    fellowAddLog("fhfile: Resource list is empty.\n");
+    return;
+  }
+
+  ULO fsNode = memoryReadLong(rsListHeader);
+  while (fsNode != 0 && (fsNode != rsListHeader + 4))
+  {
+    fellowAddLog("fhfile: ResourceEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4), memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
+    fsNode = memoryReadLong(fsNode);
+  }
+}
+
+void fhfileDoLogAllocMemResult()
+{
+  fellowAddLog("fhfile: AllocMem() returned %.8X\n", cpuGetDReg(0));
+}
+
+void fhfileDoLogOpenResourceResult()
+{
+  fellowAddLog("fhfile: OpenResource() returned %.8X\n", cpuGetDReg(0));
+}
+
+// D0 - pointer to resource list
+void fhfileDoLogAvailableFilesystems()
+{
+  fellowAddLog("fhfile: Available filesystems\n");
+
+  ULO fsResource = cpuGetDReg(0);
+
+  fellowAddLog("fhfile: FileSystem resource node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s' Creator '%s'\n", fsResource, memoryReadLong(fsResource), memoryReadLong(fsResource + 4), memoryReadByte(fsResource + 8), memoryReadByte(fsResource + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsResource + 10)).c_str(), fhfileLogGetStringFromMemory(memoryReadLong(fsResource + 14)).c_str());
+
+  ULO fsList = fsResource + 18;
+  fellowAddLog("fhfile: FileSystemEntries list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", fsList, memoryReadLong(fsList), memoryReadLong(fsList + 4), memoryReadLong(fsList + 8), memoryReadByte(fsList + 9));
+  if (fsList == memoryReadLong(fsList + 8))
+  {
+    fellowAddLog("fhfile: FileSystemEntry list is empty.\n");
+    return;
+  }
+
+  ULO fsNode = memoryReadLong(fsList);
+  while (fsNode != 0 && (fsNode != fsList + 4))
+  {
+    fellowAddLog("fhfile: FileSystemEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4), memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
+
+    ULO fsEntry = fsNode + 14;
+    fellowAddLog("fhfile: FileSystemEntry DosType   : %.8X\n", memoryReadLong(fsEntry));
+    fellowAddLog("fhfile: FileSystemEntry Version   : %.8X\n", memoryReadLong(fsEntry + 4));
+    fellowAddLog("fhfile: FileSystemEntry PatchFlags: %.8X\n", memoryReadLong(fsEntry + 8));
+    fellowAddLog("fhfile: FileSystemEntry Type      : %.8X\n", memoryReadLong(fsEntry + 12));
+    fellowAddLog("fhfile: FileSystemEntry Task      : %.8X\n", memoryReadLong(fsEntry + 16));
+    fellowAddLog("fhfile: FileSystemEntry Lock      : %.8X\n", memoryReadLong(fsEntry + 20));
+    fellowAddLog("fhfile: FileSystemEntry Handler   : %.8X\n", memoryReadLong(fsEntry + 24));
+    fellowAddLog("fhfile: FileSystemEntry StackSize : %.8X\n", memoryReadLong(fsEntry + 28));
+    fellowAddLog("fhfile: FileSystemEntry Priority  : %.8X\n", memoryReadLong(fsEntry + 32));
+    fellowAddLog("fhfile: FileSystemEntry Startup   : %.8X\n", memoryReadLong(fsEntry + 36));
+    fellowAddLog("fhfile: FileSystemEntry SegList   : %.8X\n", memoryReadLong(fsEntry + 40));
+    fellowAddLog("fhfile: FileSystemEntry GlobalVec : %.8X\n\n", memoryReadLong(fsEntry + 44));
+    fsNode = memoryReadLong(fsNode);
+  }
+}
 
 /*=================================================*/
 /* fhfile_do                                       */
@@ -404,36 +577,76 @@ static void fhfileAbortIO(void) {
 /* write a longword to $f40000, which is forwarded */
 /* by the memory system to this procedure.         */
 /* Hardfile commands are issued by 0x0001XXXX      */
+/* RDB filesystem commands by 0x0002XXXX           */
 /*=================================================*/
 
-void fhfileDo(ULO data) {
-  switch (data & 0xffff) {
-    case 1:
-      fhfileDiag();
-      break;
-    case 2:
-      fhfileOpen();
-      break;
-    case 3:
-      fhfileClose();
-      break;
-    case 4:
-      fhfileExpunge();
-      break;
-    case 5:
-      fhfileNULL();
-      break;
-    case 6:
-      fhfileBeginIO();
-      break;
-    case 7:
-      fhfileAbortIO();
-      break;
-    default:
-      break;
+void fhfileDo(ULO data)
+{
+  ULO type = data >> 16;
+  ULO operation = data & 0xffff;
+  if (type == 1)
+  {
+    switch (operation)
+    {
+      case 1:
+        fhfileDoDiag();
+        break;
+      case 2:
+        fhfileDoOpen();
+        break;
+      case 3:
+        fhfileDoClose();
+        break;
+      case 4:
+        fhfileDoExpunge();
+        break;
+      case 5:
+        fhfileDoNULL();
+        break;
+      case 6:
+        fhfileDoBeginIO();
+        break;
+      case 7:
+        fhfileDoAbortIO();
+        break;
+      default:
+        break;
+    }
+  }
+  else if (type == 2)
+  {
+    switch (operation)
+    {
+      case 1:
+        fhfileDoGetFileSystemCount();
+        break;
+      case 2:
+        fhfileDoGetFileSystemHunkCount();
+        break;
+      case 3:
+        fhfileDoGetFileSystemHunkSize();
+        break;
+      case 4:
+        fhfileDoRelocateHunk();
+        break;
+      case 5:
+        fhfileDoInitializeFileSystemEntry();
+        break;
+      case 0xa0:
+        fhfileDoLogAllocMemResult();
+        break;
+      case 0xa1:
+        fhfileDoLogOpenResourceResult();
+        break;
+      case 0xa2:
+        fhfileDoLogAvailableResources();
+        break;
+      case 0xa3:
+        fhfileDoLogAvailableFilesystems();
+        break;
+    }
   }
 }
-
 
 /*===========================================================================*/
 /* Hardfile card init                                                        */
@@ -504,10 +717,8 @@ void fhfileWriteLong(ULO data, ULO address)
 /*====================================================*/
 
 void fhfileCardMap(ULO mapping) {
-  ULO bank;
-
   fhfile_romstart = (mapping<<8) & 0xff0000;
-  bank = fhfile_romstart>>16;
+  ULO bank = fhfile_romstart>>16;
   memoryBankSet(fhfileReadByte,
     fhfileReadWord,
     fhfileReadLong,
@@ -573,78 +784,69 @@ static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr){
 /* Can be called at every reset, but really only needed once */
 /*===========================================================*/
 
-void fhfileHardReset(void) {
-  ULO devicename, idstr;
-  ULO romtagstart;
-  ULO initstruct, functable, datatable;
-  ULO fhfile_t_init = 0;
-  ULO fhfile_t_open = 0;
-  ULO fhfile_t_close = 0;
-  ULO fhfile_t_expunge = 0;
-  ULO fhfile_t_null = 0;
-  ULO fhfile_t_beginio = 0;
-  ULO fhfile_t_abortio = 0;
+void fhfileHardReset()
+{
   ULO unitnames[FHFILE_MAX_DEVICES];
-  ULO doslibname;
   STR tmpunitname[32];
-  ULO i;
 
-  if ((!fhfileHasZeroDevices()) &&
-    fhfileGetEnabled() && 
-    (memoryGetKickImageVersion() >= 34)) {
+  fhfile_rdb_filesystems.clear();
+
+  if (!fhfileHasZeroDevices() && fhfileGetEnabled() && memoryGetKickImageVersion() >= 34)
+  {
       memoryDmemSetCounter(0);
 
       /* Device-name and ID string */
 
-      devicename = memoryDmemGetCounter();
+      ULO devicename = memoryDmemGetCounter();
       memoryDmemSetString("fhfile.device");
-      idstr = memoryDmemGetCounter();
+      ULO idstr = memoryDmemGetCounter();
       memoryDmemSetString("Fellow Hardfile device V4");
 
       /* Device name as seen in Amiga DOS */
 
-      for (i = 0; i < FHFILE_MAX_DEVICES; i++) {
+      for (int i = 0; i < FHFILE_MAX_DEVICES; i++)
+      {
 	unitnames[i] = memoryDmemGetCounter();
-	sprintf(tmpunitname, "FELLOW%u", i);
+	sprintf(tmpunitname, "FELLOW%d", i);
 	memoryDmemSetString(tmpunitname);
       }
 
       /* dos.library name */
 
-      doslibname = memoryDmemGetCounter();
+      ULO doslibname = memoryDmemGetCounter();
       memoryDmemSetString("dos.library");
 
       /* fhfile.open */
 
-      fhfile_t_open = memoryDmemGetCounter();
+      ULO fhfile_t_open = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010002); memoryDmemSetLong(0xf40000); /* move.l #$00010002,$f40000 */
       memoryDmemSetWord(0x4e75);					/* rts */
 
       /* fhfile.close */
 
-      fhfile_t_close = memoryDmemGetCounter();
+      ULO fhfile_t_close = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010003); memoryDmemSetLong(0xf40000); /* move.l #$00010003,$f40000 */
       memoryDmemSetWord(0x4e75);					/* rts */
 
       /* fhfile.expunge */
 
-      fhfile_t_expunge = memoryDmemGetCounter();
+      ULO fhfile_t_expunge = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010004); memoryDmemSetLong(0xf40000); /* move.l #$00010004,$f40000 */
       memoryDmemSetWord(0x4e75);					/* rts */
 
       /* fhfile.null */
 
-      fhfile_t_null = memoryDmemGetCounter();
+      ULO fhfile_t_null = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010005); memoryDmemSetLong(0xf40000); /* move.l #$00010005,$f40000 */
       memoryDmemSetWord(0x4e75);                                  /* rts */
 
       /* fhfile.beginio */
 
-      fhfile_t_beginio = memoryDmemGetCounter();
+      ULO fhfile_t_beginio = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010006); memoryDmemSetLong(0xf40000); /* move.l #$00010006,$f40000 */
       memoryDmemSetLong(0x48e78002);				/* movem.l d0/a6,-(a7) */
@@ -657,14 +859,14 @@ void fhfileHardReset(void) {
 
       /* fhfile.abortio */
 
-      fhfile_t_abortio = memoryDmemGetCounter();
+      ULO fhfile_t_abortio = memoryDmemGetCounter();
       memoryDmemSetWord(0x23fc);
       memoryDmemSetLong(0x00010007); memoryDmemSetLong(0xf40000); /* move.l #$00010007,$f40000 */
       memoryDmemSetWord(0x4e75);					/* rts */
 
       /* Func-table */
 
-      functable = memoryDmemGetCounter();
+      ULO functable = memoryDmemGetCounter();
       memoryDmemSetLong(fhfile_t_open);
       memoryDmemSetLong(fhfile_t_close);
       memoryDmemSetLong(fhfile_t_expunge);
@@ -675,7 +877,7 @@ void fhfileHardReset(void) {
 
       /* Data-table */
 
-      datatable = memoryDmemGetCounter();
+      ULO datatable = memoryDmemGetCounter();
       memoryDmemSetWord(0xE000);          /* INITBYTE */
       memoryDmemSetWord(0x0008);          /* LN_TYPE */
       memoryDmemSetWord(0x0300);          /* NT_DEVICE */
@@ -709,116 +911,20 @@ void fhfileHardReset(void) {
 
       /* fhfile.init */
 
-      fhfile_t_init = memoryDmemGetCounter();
+      ULO fhfile_t_init = memoryDmemGetCounter();
 
-      memoryDmemSetByte(0x48); memoryDmemSetByte(0xE7);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xFE);
-      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
-      memoryDmemSetByte(0x43); memoryDmemSetByte(0xFA);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0xAA);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFE); memoryDmemSetByte(0x68);
-      memoryDmemSetByte(0x28); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x41); memoryDmemSetByte(0xFA);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0xB2);
-      memoryDmemSetByte(0x2E); memoryDmemSetByte(0x08);
-      memoryDmemSetByte(0x20); memoryDmemSetByte(0x47);
-      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x90);
-      memoryDmemSetByte(0x6B); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x86);
-      memoryDmemSetByte(0x58); memoryDmemSetByte(0x87);
-      memoryDmemSetByte(0x20); memoryDmemSetByte(0x3C);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x58);
-      memoryDmemSetByte(0x72); memoryDmemSetByte(0x01);
-      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x3A);
-      memoryDmemSetByte(0x2A); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x20); memoryDmemSetByte(0x47);
-      memoryDmemSetByte(0x70); memoryDmemSetByte(0x54);
-      memoryDmemSetByte(0x2B); memoryDmemSetByte(0xB0);
-      memoryDmemSetByte(0x08); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x08); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x59); memoryDmemSetByte(0x80);
-      memoryDmemSetByte(0x64); memoryDmemSetByte(0xF6);
-      memoryDmemSetByte(0xCD); memoryDmemSetByte(0x4C);
-      memoryDmemSetByte(0x20); memoryDmemSetByte(0x4D);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x70);
-      memoryDmemSetByte(0xCD); memoryDmemSetByte(0x4C);
-      memoryDmemSetByte(0x26); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x70); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08);
-      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x10);
-      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x20);
-      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
-      memoryDmemSetByte(0x70); memoryDmemSetByte(0x14);
-      memoryDmemSetByte(0x72); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x3A);
-      memoryDmemSetByte(0x22); memoryDmemSetByte(0x47);
-      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x29);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xFC);
-      memoryDmemSetByte(0x22); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x70); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x22); memoryDmemSetByte(0x80);
-      memoryDmemSetByte(0x23); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
-      memoryDmemSetByte(0x33); memoryDmemSetByte(0x40);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0E);
-      memoryDmemSetByte(0x33); memoryDmemSetByte(0x7C);
-      memoryDmemSetByte(0x10); memoryDmemSetByte(0xFF);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08);
-      memoryDmemSetByte(0x9D); memoryDmemSetByte(0x69);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08);
-      memoryDmemSetByte(0x23); memoryDmemSetByte(0x79);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
-      memoryDmemSetByte(0x0F); memoryDmemSetByte(0xFC);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0A);
-      memoryDmemSetByte(0x23); memoryDmemSetByte(0x4B);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x10);
-      memoryDmemSetByte(0x41); memoryDmemSetByte(0xEC);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x4A);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFE); memoryDmemSetByte(0xF2);
-      memoryDmemSetByte(0x06); memoryDmemSetByte(0x87);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x58);
-      memoryDmemSetByte(0x60); memoryDmemSetByte(0x00);
-      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x76);
-      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
-      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
-      memoryDmemSetByte(0x22); memoryDmemSetByte(0x4C);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
-      memoryDmemSetByte(0xFE); memoryDmemSetByte(0x62);
-      memoryDmemSetByte(0x4C); memoryDmemSetByte(0xDF);
-      memoryDmemSetByte(0x7F); memoryDmemSetByte(0xFF);
-      memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
-      memoryDmemSetByte(0x65); memoryDmemSetByte(0x78);
-      memoryDmemSetByte(0x70); memoryDmemSetByte(0x61);
-      memoryDmemSetByte(0x6E); memoryDmemSetByte(0x73);
-      memoryDmemSetByte(0x69); memoryDmemSetByte(0x6F);
-      memoryDmemSetByte(0x6E); memoryDmemSetByte(0x2E);
-      memoryDmemSetByte(0x6C); memoryDmemSetByte(0x69);
-      memoryDmemSetByte(0x62); memoryDmemSetByte(0x72);
-      memoryDmemSetByte(0x61); memoryDmemSetByte(0x72);
-      memoryDmemSetByte(0x79); memoryDmemSetByte(0x00);
+#include "c:\\temp\\out.c"
 
       /* The mkdosdev packets */
 
-      for (i = 0; i < FHFILE_MAX_DEVICES; i++)
-	fhfileMakeDOSDevPacket(i, unitnames[i], devicename);
+      for (int i = 0; i < FHFILE_MAX_DEVICES; i++)
+      {
+        fhfileMakeDOSDevPacket(i, unitnames[i], devicename);
+      }
 
       /* Init-struct */
 
-      initstruct = memoryDmemGetCounter();
+      ULO initstruct = memoryDmemGetCounter();
       memoryDmemSetLong(0x100);                   /* Data-space size, min LIB_SIZE */
       memoryDmemSetLong(functable);               /* Function-table */
       memoryDmemSetLong(datatable);               /* Data-table */
@@ -826,7 +932,7 @@ void fhfileHardReset(void) {
 
       /* RomTag structure */
 
-      romtagstart = memoryDmemGetCounter();
+      ULO romtagstart = memoryDmemGetCounter();
       memoryDmemSetWord(0x4afc);                  /* Start of structure */
       memoryDmemSetLong(romtagstart);             /* Pointer to start of structure */
       memoryDmemSetLong(romtagstart+26);          /* Pointer to end of code */
@@ -883,9 +989,22 @@ void fhfileHardReset(void) {
 
       memoryDmemSetLongNoCounter(0, 4092);
       memoryEmemCardAdd(fhfileCardInit, fhfileCardMap);
+
+      for (int i = 0; i < FHFILE_MAX_DEVICES; i++)
+      {
+        if (fhfile_devs[i].F != nullptr && fhfile_devs[i].rdb != nullptr)
+        {
+          for (auto fileSystemHeader : fhfile_devs[i].rdb->FilesystemHeaders)
+          {
+            fhfile_rdb_filesystems.push_back(fileSystemHeader);
+          }
+        }
+      }
   }
   else
+  {
     memoryDmemClear();
+  }
 }
 
 
