@@ -107,18 +107,6 @@ void kbdEventEOFHandler(void) {
               fellowRequestEmulationStop();
 
 	      break;
-      case EVENT_SCROLL_UP:
-	      drawSetClipScroll(0x48);
-	      break;
-      case EVENT_SCROLL_DOWN:
-	      drawSetClipScroll(0x50);
-	      break;
-      case EVENT_SCROLL_LEFT:
-	      drawSetClipScroll(0x4b);
-	      break;
-      case EVENT_SCROLL_RIGHT:
-	      drawSetClipScroll(0x4d);
-	      break;
       case EVENT_HARD_RESET:
               // a reset triggered by keyboard should perform a soft reset and in addition reset the CPU state
               // cpuIntegrationHardReset calls cpuHardReset, which in turn triggers a soft reset
@@ -281,12 +269,14 @@ void kbdQueueHandler(void) {
       ULO scode;
 
       kbd_time_to_wait = 10;
-      scode = kbd_state.scancodes.buffer[kbd_state.scancodes.outpos &
-	KBDBUFFERMASK];
+      scode = kbd_state.scancodes.buffer[kbd_state.scancodes.outpos & KBDBUFFERMASK];
       kbd_state.scancodes.outpos++;
       if (scode != A_NONE) {
-	ciaWritesp(0, (UBY) ~(((scode >> 7) & 1) | (scode << 1)));
-	ciaRaiseIRQ(0, 8);
+#ifdef _DEBUG
+        fellowAddLog("   kbdQueueHandler(): writing scancode 0x%x to CIA and raising interrupt.\n", scode);
+#endif
+	      ciaWritesp(0, (UBY) ~(((scode >> 7) & 1) | (scode << 1)));
+	      ciaRaiseIRQ(0, 8);
       }
     }
   }

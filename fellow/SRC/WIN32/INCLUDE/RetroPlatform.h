@@ -28,6 +28,10 @@
 
 #ifdef RETRO_PLATFORM
 
+// the conditional define below enables/disables support for the API changes introduced in 7.1
+#define FELLOW_SUPPORT_RP_API_VERSION_71
+// #define FELLOW_DELAY_RP_KEYBOARD_INPUT
+
 // DirectInput resources are used in interfaces
 #include "dxver.h"
 #include <dinput.h>
@@ -104,6 +108,8 @@ public:
   void       SetScreenWidth(ULO);
   void       SetWindowInstance(HINSTANCE);
 
+  void       RegisterRetroPlatformScreenMode(const bool bStartup);
+
   // public callback hooks
   LRESULT CALLBACK HostMessageFunction(UINT, WPARAM, LPARAM, LPCVOID, DWORD, LPARAM);
   BOOL FAR PASCAL  EnumerateJoystick(LPCDIDEVICEINSTANCE pdinst, LPVOID pvRef);
@@ -170,7 +176,8 @@ private:
   ULO lMainVersion = 0, lRevision = 0, lBuild = 0;
 
   // screen settings
-  LON lClippingOffsetLeftRP = 0, lClippingOffsetTopRP = 0;
+  LON lClippingOffsetLeftRP = RETRO_PLATFORM_OFFSET_ADJUST_LEFT;
+  LON lClippingOffsetTopRP  = RETRO_PLATFORM_OFFSET_ADJUST_TOP;
   LON lScreenWidthRP        = 0, lScreenHeightRP      = 0;
   ULO lScreenMode = 0;
   bool bScreenWindowed = true;

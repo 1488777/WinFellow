@@ -1194,7 +1194,7 @@ static void cpuDivL(ULO divisor, ULO ext, ULO instruction_time)
 
     if (sign)
     { 
-      if (size64) x_signed = ((LLO) (LON) cpuGetDReg(dq_reg)) | (((LLO) cpuGetDReg(dr_reg))<<32);
+      if (size64) x_signed = (LLO) ((ULL) cpuGetDReg(dq_reg)) | (((LLO) cpuGetDReg(dr_reg))<<32);
       else x_signed = (LLO) (LON) cpuGetDReg(dq_reg);
       y_signed = (LLO) (LON) divisor;
 
@@ -2648,7 +2648,7 @@ static ULO cpuGetBfWidth(UWO ext, bool widthIsDataRegister)
   return width;
 }
 
-static void cpuSetBfField(cpuBfData *bf_data, ULO ea_or_reg, bool has_ea)
+static void cpuSetBfField(struct cpuBfData *bf_data, ULO ea_or_reg, bool has_ea)
 {
   if (has_ea)
   {

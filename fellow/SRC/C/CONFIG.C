@@ -67,6 +67,16 @@ cfgManager cfg_manager;
 /* Configuration                                                              */
 /*============================================================================*/
 
+void cfgSetConfigFileVersion(cfg *config, ULO version)
+{
+  config->m_configfileversion = version;
+}
+
+ULO cfgGetConfigFileVersion(cfg *config)
+{
+  return config->m_configfileversion;
+}
+
 void cfgSetDescription(cfg *config, STR *description)
 {
   strncpy(config->m_description, description, 255);
@@ -221,7 +231,6 @@ ULO cfgGetBogoSize(cfg *config)
 void cfgSetKickImage(cfg *config, STR *kickimage)
 {
   strncpy(config->m_kickimage, kickimage, CFG_FILENAME_LENGTH);
-  //fsNavigMakeRelativePath(config->m_kickimage);
 }
 
 STR *cfgGetKickImage(cfg *config)
@@ -262,7 +271,6 @@ ULO cfgGetKickCRC32(cfg *config)
 void cfgSetKey(cfg *config, STR *key)
 {
   strncpy(config->m_key, key, CFG_FILENAME_LENGTH);
-  //fsNavigMakeRelativePath(config->m_key);
 }
 
 STR *cfgGetKey(cfg *config)
@@ -400,19 +408,9 @@ ULO cfgGetFrameskipRatio(cfg *config)
   return config->m_frameskipratio;
 }
 
-void cfgSetClipMode(cfg *config, DISPLAYCLIP_MODE clipmode)
+void cfgSetClipLeft(cfg *config, ULO left)
 {
-  config->m_clipmode = clipmode;
-}
-
-DISPLAYCLIP_MODE cfgGetClipMode(cfg *config)
-{
-  return config->m_clipmode;
-}
-
-void cfgSetClipLeft(cfg *config, ULO clipleft)
-{
-  config->m_clipleft = clipleft;
+  config->m_clipleft = left;
 }
 
 ULO cfgGetClipLeft(cfg *config)
@@ -420,9 +418,9 @@ ULO cfgGetClipLeft(cfg *config)
   return config->m_clipleft;
 }
 
-void cfgSetClipTop(cfg *config, ULO cliptop)
+void cfgSetClipTop(cfg *config, ULO top)
 {
-  config->m_cliptop = cliptop;
+  config->m_cliptop = top;
 }
 
 ULO cfgGetClipTop(cfg *config)
@@ -430,9 +428,9 @@ ULO cfgGetClipTop(cfg *config)
   return config->m_cliptop;
 }
 
-void cfgSetClipRight(cfg *config, ULO clipright)
+void cfgSetClipRight(cfg *config, ULO right)
 {
-  config->m_clipright = clipright;
+  config->m_clipright = right;
 }
 
 ULO cfgGetClipRight(cfg *config)
@@ -440,9 +438,9 @@ ULO cfgGetClipRight(cfg *config)
   return config->m_clipright;
 }
 
-void cfgSetClipBottom(cfg *config, ULO clipbottom)
+void cfgSetClipBottom(cfg *config, ULO bottom)
 {
-  config->m_clipbottom = clipbottom;
+  config->m_clipbottom = bottom;
 }
 
 ULO cfgGetClipBottom(cfg *config)
@@ -812,9 +810,10 @@ void cfgSetDefaults(cfg *config)
   if(config == nullptr) return;
 
   /*==========================================================================*/
-  /* Default configuration description                                        */
+  /* Default configuration version and description                            */
   /*==========================================================================*/
 
+  cfgSetConfigFileVersion(config, CONFIG_CURRENT_FILE_VERSION);
   cfgSetDescription(config, FELLOWLONGVERSION);
 
   /*==========================================================================*/
@@ -849,11 +848,11 @@ void cfgSetDefaults(cfg *config)
   /* Default screen configuration                                             */
   /*==========================================================================*/
 
-  cfgSetScreenWidth(config, 640);
-  cfgSetScreenHeight(config, 400);
-  cfgSetScreenColorBits(config, 16);
-  cfgSetScreenWindowed(config, true);
+  cfgSetScreenWidth(config, 800);
+  cfgSetScreenHeight(config, 600);
+  cfgSetScreenColorBits(config, 32);
   cfgSetScreenRefresh(config, 0);
+  cfgSetScreenWindowed(config, true);
   cfgSetUseMultipleGraphicalBuffers(config, FALSE);
   cfgSetScreenDrawLEDs(config, true);
   cfgSetDeinterlace(config, true);
@@ -868,11 +867,10 @@ void cfgSetDefaults(cfg *config)
   cfgSetDisplayScale(config, DISPLAYSCALE_1X);
   cfgSetDisplayScaleStrategy(config, DISPLAYSCALE_STRATEGY_SOLID);
   cfgSetGraphicsEmulationMode(config, GRAPHICSEMULATIONMODE_LINEEXACT);
-  cfgSetClipMode(config, DISPLAYCLIP_MODE::AUTOMATIC_CLIP);
-  cfgSetClipLeft(config, 129); // Match for 640x400 at 1x
-  cfgSetClipTop(config, 44);
-  cfgSetClipRight(config, 449);
-  cfgSetClipRight(config, 244);
+  cfgSetClipLeft(config, 96);
+  cfgSetClipTop(config, 26);
+  cfgSetClipRight(config, 472);
+  cfgSetClipBottom(config, 314);
 
   /*==========================================================================*/
   /* Default sound configuration                                              */
@@ -1245,29 +1243,6 @@ static ULO cfgGetBufferLengthFromString(STR *value)
   return buffer_length;
 }
 
-static DISPLAYCLIP_MODE cfgGetClipModeFromString(STR *value)
-{
-  if (stricmp(value, "auto") == 0)
-  {
-    return DISPLAYCLIP_MODE::AUTOMATIC_CLIP;
-  }
-  if (stricmp(value, "fixed") == 0)
-  {
-    return DISPLAYCLIP_MODE::FIXED_CLIP;
-  }
-  return DISPLAYCLIP_MODE::AUTOMATIC_CLIP; // Default
-}
-
-static STR* cfgGetClipModeToString(DISPLAYCLIP_MODE clipmode)
-{
-  switch (clipmode)
-  {
-    case DISPLAYCLIP_MODE::AUTOMATIC_CLIP:  return "auto";
-    case DISPLAYCLIP_MODE::FIXED_CLIP:      return "fixed";
-  }
-  return "fixed";
-}
-
 static DISPLAYSCALE cfgGetDisplayScaleFromString(STR *value)
 {
   if (stricmp(value, "auto") == 0)
@@ -1504,6 +1479,10 @@ BOOLE cfgSetOption(cfg *config, STR *optionstr)
     {
       cfgSetUseAutoconfig(config, cfgGetBOOLEFromString(value));
     }
+    else if (stricmp(option, "config_version") == 0)
+    {
+      cfgSetConfigFileVersion(config, cfgGetULOFromString(value));
+    }
     else if (stricmp(option, "config_description") == 0)
     {
       cfgSetDescription(config, value);
@@ -1693,7 +1672,7 @@ BOOLE cfgSetOption(cfg *config, STR *optionstr)
     }
     else if (stricmp(option, "gfx_fullscreen_amiga") == 0)
     {
-      cfgSetScreenWindowed(config, !cfgGetBOOLEFromString(value));
+      cfgSetScreenWindowed(config, !cfgGetboolFromString(value));
     }
     else if (stricmp(option, "use_multiple_graphical_buffers") == 0)
     {
@@ -1714,10 +1693,6 @@ BOOLE cfgSetOption(cfg *config, STR *optionstr)
     else if (stricmp(option, "show_leds") == 0)
     {
       cfgSetScreenDrawLEDs(config, cfgGetboolFromString(value));
-    }
-    else if (stricmp(option, "gfx_clip_mode") == 0)
-    {
-      cfgSetClipMode(config, cfgGetClipModeFromString(value));
     }
     else if (stricmp(option, "gfx_clip_left") == 0)
     {
@@ -1935,6 +1910,7 @@ BOOLE cfgSetOption(cfg *config, STR *optionstr)
 
 BOOLE cfgSaveOptions(cfg *config, FILE *cfgfile)
 {
+  fprintf(cfgfile, "config_version=%u\n", cfgGetConfigFileVersion(config));
   fprintf(cfgfile, "config_description=%s\n", cfgGetDescription(config));
   fprintf(cfgfile, "autoconfig=%s\n", cfgGetBOOLEToString(cfgGetUseAutoconfig(config)));
   for (ULO i = 0; i < 4; i++)
@@ -1978,13 +1954,12 @@ BOOLE cfgSaveOptions(cfg *config, FILE *cfgfile)
   fprintf(cfgfile, "gfx_chipset=%s\n", cfgGetECSToString(cfgGetECS(config)));
   fprintf(cfgfile, "gfx_width=%u\n", cfgGetScreenWidth(config));
   fprintf(cfgfile, "gfx_height=%u\n", cfgGetScreenHeight(config));
-  fprintf(cfgfile, "gfx_fullscreen_amiga=%s\n", cfgGetBOOLEToString(!cfgGetScreenWindowed(config)));
+  fprintf(cfgfile, "gfx_fullscreen_amiga=%s\n", cfgGetboolToString(!cfgGetScreenWindowed(config)));
   fprintf(cfgfile, "use_multiple_graphical_buffers=%s\n", cfgGetBOOLEToString(cfgGetUseMultipleGraphicalBuffers(config)));
   fprintf(cfgfile, "gfx_driver=%s\n", cfgGetDisplayDriverToString(cfgGetDisplayDriver(config)));
   // fprintf(cfgfile, "gfx_emulation_mode=%s\n"), cfgGetGraphicsEmulationModeToString(cfgGetGraphicsEmulationMode(config)));
   fprintf(cfgfile, "fellow.gfx_refresh=%u\n", cfgGetScreenRefresh(config));
   fprintf(cfgfile, "gfx_colour_mode=%s\n", cfgGetColorBitsToString(cfgGetScreenColorBits(config)));
-  fprintf(cfgfile, "gfx_clip_mode=%s\n", cfgGetClipModeToString(cfgGetClipMode(config)));
   fprintf(cfgfile, "gfx_clip_left=%u\n", cfgGetClipLeft(config));
   fprintf(cfgfile, "gfx_clip_top=%u\n", cfgGetClipTop(config));
   fprintf(cfgfile, "gfx_clip_right=%u\n", cfgGetClipRight(config));
@@ -2016,6 +1991,56 @@ BOOLE cfgSaveOptions(cfg *config, FILE *cfgfile)
   return TRUE;
 }
 
+void cfgUpgradeLegacyConfigToCurrentVersion(cfg *config)
+{
+  //  New options:
+  //  ------------
+  //  config_version = <integer>
+  //  * Current file version is 2.
+
+  //  gfx_driver = <text>
+  //  * Values: "directdraw" (default if missing) and "direct3d11".
+
+  //  gfx_clip_left = <integer>
+  //  * Lores cylinder for left output border.
+
+  //  gfx_clip_top = <integer>
+  //  * Lores line number for top output border.
+
+  //  gfx_clip_right = <integer>
+  //  * Lores cylinder for right output border.
+
+  //  gfx_clip_bottom = <integer>
+  //  * Lores line number for bottom output border.
+
+  //  Extended options:
+  //  -----------------
+  //  gfx_display_scale = <text>
+  //  * Added : "auto", "triple" and "quadruple".
+
+  // Scale
+  if (cfgGetDisplayScale(config) == 0 || cfgGetDisplayScale(config) > 2)
+  {
+    cfgSetDisplayScale(config, DISPLAYSCALE::DISPLAYSCALE_1X);
+  }
+
+  // Set max pal clip, with scale limited to 1X or 2X, the actual integer clip values will be adjusted perfectly once the emulator starts up
+  cfgSetClipLeft(config, 88);
+  cfgSetClipTop(config, 26);
+  cfgSetClipRight(config, 472);
+  cfgSetClipBottom(config, 314);
+
+  cfgSetConfigFileVersion(config, CONFIG_CURRENT_FILE_VERSION);
+}
+
+void cfgUpgradeConfig(cfg *config)
+{
+  if (cfgGetConfigFileVersion(config) < CONFIG_CURRENT_FILE_VERSION)
+  {
+    cfgUpgradeLegacyConfigToCurrentVersion(config);
+  }
+}
+
 
 /*============================================================================*/
 /* Remove unwanted newline chars on the end of a string                       */
@@ -2036,7 +2061,7 @@ static void cfgStripTrailingNewlines(STR *line)
 /* Load configuration from file                                               */
 /*============================================================================*/
 
-static BOOLE cfgLoadFromFile(cfg *config, FILE *cfgfile)
+static bool cfgLoadFromFile(cfg *config, FILE *cfgfile)
 {
   char line[256];
   while (!feof(cfgfile))
@@ -2046,13 +2071,11 @@ static BOOLE cfgLoadFromFile(cfg *config, FILE *cfgfile)
     cfgSetOption(config, line);
   }
   cfgSetConfigAppliedOnce(config, true);
-  return TRUE;
+  return true;
 }
 
-BOOLE cfgLoadFromFilename(cfg *config, const STR *filename, const bool bIsPreset)
+bool cfgLoadFromFilename(cfg *config, const STR *filename, const bool bIsPreset)
 {
-  FILE *cfgfile;
-  BOOLE result;
   STR newfilename[CFG_FILENAME_LENGTH];
 
   fileopsResolveVariables(filename, newfilename);
@@ -2063,14 +2086,23 @@ BOOLE cfgLoadFromFilename(cfg *config, const STR *filename, const bool bIsPreset
     // remove existing hardfiles
     cfgHardfilesFree(config);
     cfgFilesystemsFree(config);
+
+    // Full load from file, make sure we don't inherit the old file version number
+    cfgSetConfigFileVersion(config, 0);
   }
 
-  cfgfile = fopen(newfilename, "r");
-  result = (cfgfile != nullptr);
+  FILE *cfgfile = fopen(newfilename, "r");
+  bool result = (cfgfile != nullptr);
   if (result)
   {
     result = cfgLoadFromFile(config, cfgfile);
     fclose(cfgfile);
+
+    if (!bIsPreset && cfgGetConfigFileVersion(config) < CONFIG_CURRENT_FILE_VERSION)
+    {
+      fellowAddLog("cfg: Upgrading config from old version.\n");
+      cfgUpgradeConfig(config);
+    }
   }
   return result;
 }
@@ -2144,6 +2176,7 @@ static BOOLE cfgParseCommandLine(cfg *config, int argc, char *argv[])
       }
       i++;
     }
+#ifndef FELLOW_SUPPORT_RP_API_VERSION_71
     else if (stricmp(argv[i], "-rpescapekey") == 0)
     {
       i++;
@@ -2164,6 +2197,7 @@ static BOOLE cfgParseCommandLine(cfg *config, int argc, char *argv[])
       }
       i++;
     }
+#endif
     else if (stricmp(argv[i], "-rpscreenmode") == 0)
     {
       i++;
@@ -2182,11 +2216,6 @@ static BOOLE cfgParseCommandLine(cfg *config, int argc, char *argv[])
       }
       i++;
     }
-    /* else if (stricmp(argv[i], "-logflush") == 0)
-    {
-    i++;
-    fellowAddLog("cfg: RetroPlatform log flush set.\n");
-    } */
 #endif
     else if (stricmp(argv[i], "-f") == 0)
     { /* Load configuration file */
@@ -2315,23 +2344,31 @@ BOOLE cfgManagerConfigurationActivate(cfgManager *configmanager)
   drawSetLEDsEnabled(cfgGetScreenDrawLEDs(config));
   drawSetFPSCounterEnabled(cfgGetMeasureSpeed(config));
   drawSetFrameskipRatio(cfgGetFrameskipRatio(config));
-  drawSetClipMode(cfgGetClipMode(config));
-  drawSetClipLeft(cfgGetClipLeft(config));
-  drawSetClipTop(cfgGetClipTop(config));
-  drawSetClipRight(cfgGetClipRight(config));
-  drawSetClipBottom(cfgGetClipBottom(config));
+#ifdef RETRO_PLATFORM
+  // internal clipping values in RetroPlatform headless mode are configured by 
+  // RetroPlatform::RegisterRetroPlatformScreenMode, skip configuration
+  if(!RP.GetHeadlessMode())
+#endif
+  drawSetInternalClip(draw_rect(cfgGetClipLeft(config), cfgGetClipTop(config), cfgGetClipRight(config), cfgGetClipBottom(config)));
+  drawSetOutputClip(draw_rect(cfgGetClipLeft(config), cfgGetClipTop(config), cfgGetClipRight(config), cfgGetClipBottom(config)));
   drawSetDisplayScale(cfgGetDisplayScale(config));
   drawSetDisplayScaleStrategy(cfgGetDisplayScaleStrategy(config));
   drawSetAllowMultipleBuffers(cfgGetUseMultipleGraphicalBuffers(config));
   drawSetDeinterlace(cfgGetDeinterlace(config));
   drawSetDisplayDriver(cfgGetDisplayDriver(config));
   drawSetGraphicsEmulationMode(cfgGetGraphicsEmulationMode(config));
-  drawSetMode(cfgGetScreenWidth(config),
-    cfgGetScreenHeight(config),
-    cfgGetScreenColorBits(config),
-    cfgGetScreenRefresh(config),
-    cfgGetScreenWindowed(config));
-
+  
+  if (cfgGetScreenWindowed(config))
+  {
+    drawSetWindowedMode(cfgGetScreenWidth(config), cfgGetScreenHeight(config));
+  }
+  else
+  {
+    drawSetFullScreenMode(cfgGetScreenWidth(config),
+      cfgGetScreenHeight(config),
+      cfgGetScreenColorBits(config),
+      cfgGetScreenRefresh(config));
+  }
 
   /*==========================================================================*/
   /* Sound configuration                                                      */
@@ -2475,9 +2512,9 @@ void cfgManagerStartup(cfgManager *configmanager, int argc, char *argv[])
   if(!RP.GetHeadlessMode()) {
 #endif
   if(!cfgGetConfigAppliedOnce(config)) {
-	  // load configuration that the initdata contains
-	  cfg_initdata = iniManagerGetCurrentInitdata(&ini_manager);
-	  cfgLoadFromFilename(config, iniGetCurrentConfigurationFilename(cfg_initdata), false);
+    // load configuration that the initdata contains
+    cfg_initdata = iniManagerGetCurrentInitdata(&ini_manager);
+    cfgLoadFromFilename(config, iniGetCurrentConfigurationFilename(cfg_initdata), false);
   }
 #ifdef RETRO_PLATFORM
   }

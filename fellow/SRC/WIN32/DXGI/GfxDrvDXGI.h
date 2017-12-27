@@ -26,9 +26,11 @@ template<typename T> void ReleaseCOM(T **comobject)
 class GfxDrvDXGI
 {
 private:
+  static bool _requirementsValidated;
+  static bool _requirementsValidationResult;
+
   // Information
   GfxDrvDXGIAdapterList* _adapters;
-  IDXGIFactory *_enumerationFactory;
 
   // Current session
   ID3D11Device *_d3d11device;
@@ -48,23 +50,17 @@ private:
 
   unsigned int _amigaScreenTextureCount;
   unsigned int _currentAmigaScreenTexture;
-  unsigned int _output_width;
-  unsigned int _output_height;
   draw_mode *_current_draw_mode;
 
   bool _resize_swapchain_buffers;
 
 private:
-  void CreateAdapterList();
+  bool CreateAdapterList();
   void DeleteAdapterList();
 
-  bool CreateEnumerationFactory();
-  void DeleteEnumerationFactory();
-
-  void RegisterMode(unsigned int id, unsigned int width, unsigned int height, unsigned int refreshRate = 60, bool isWindowed = true);
+  void RegisterMode(unsigned int id, unsigned int width, unsigned int height, unsigned int refreshRate = 60);
   void RegisterModes();
   void AddFullScreenModes();
-  void AddWindowModes();
 
   bool CreateD3D11Device();
   void DeleteD3D11Device();
@@ -110,7 +106,7 @@ private:
 public:
 
   void ClearCurrentBuffer();
-  void SetMode(draw_mode *dm);
+  void SetMode(draw_mode *dm, bool windowed);
   void SizeChanged(unsigned int width, unsigned int height);
   void PositionChanged();
   void NotifyActiveStatus(bool active);
@@ -124,11 +120,12 @@ public:
 
   unsigned char *ValidateBufferPointer();
   void InvalidateBufferPointer();
-  void GetBufferInformation(draw_mode *mode, draw_buffer_information *buffer_information);
+  void GetBufferInformation(draw_buffer_information *buffer_information);
   void Flip();
 
-  void RegisterRetroPlatformScreenMode(const bool, const ULO, const ULO, const ULO);
   bool SaveScreenshot(const bool, const STR *);
+
+  static bool ValidateRequirements();
 
   GfxDrvDXGI();
   virtual ~GfxDrvDXGI();

@@ -566,18 +566,18 @@ static ULO drawMakeHoldMask(ULO pos, ULO size, bool longdestination)
   return (~holdmask);
 }
 
-void drawHAMTableInit(draw_mode *dm)
+void drawHAMTableInit()
 {
   draw_HAM_modify_table[0][0] = 0;
   draw_HAM_modify_table[0][1] = 0;
 
-  bool longdestination = (dm->bits > 16);
-  draw_HAM_modify_table[1][0] = dm->bluepos + dm->bluesize - 4;     /* Blue */
-  draw_HAM_modify_table[1][1] = drawMakeHoldMask(dm->bluepos, dm->bluesize, longdestination);
-  draw_HAM_modify_table[2][0] = dm->redpos + dm->redsize - 4;        /* Red */
-  draw_HAM_modify_table[2][1] = drawMakeHoldMask(dm->redpos, dm->redsize, longdestination);
-  draw_HAM_modify_table[3][0] = dm->greenpos + dm->greensize - 4;  /* Green */
-  draw_HAM_modify_table[3][1] = drawMakeHoldMask(dm->greenpos, dm->greensize, longdestination);
+  bool longdestination = (draw_buffer_info.bits > 16);
+  draw_HAM_modify_table[1][0] = draw_buffer_info.bluepos + draw_buffer_info.bluesize - 4;     /* Blue */
+  draw_HAM_modify_table[1][1] = drawMakeHoldMask(draw_buffer_info.bluepos, draw_buffer_info.bluesize, longdestination);
+  draw_HAM_modify_table[2][0] = draw_buffer_info.redpos + draw_buffer_info.redsize - 4;        /* Red */
+  draw_HAM_modify_table[2][1] = drawMakeHoldMask(draw_buffer_info.redpos, draw_buffer_info.redsize, longdestination);
+  draw_HAM_modify_table[3][0] = draw_buffer_info.greenpos + draw_buffer_info.greensize - 4;  /* Green */
+  draw_HAM_modify_table[3][1] = drawMakeHoldMask(draw_buffer_info.greenpos, draw_buffer_info.greensize, longdestination);
 }
 
 /*============================================================================*/
@@ -1303,7 +1303,7 @@ static void drawLineHAM2x1_16Bit(graph_line *linedescription, ULO nextlineoffset
     drawSetPixel2x1_16Bit(framebuffer++, drawMake32BitColorFrom16Bit(hampixel));
   }
 
-  line_exact_sprites->MergeHAM2x16((ULO*) draw_buffer_current_ptr_local, linedescription);
+  line_exact_sprites->MergeHAM2x1x16((ULO*)draw_buffer_current_ptr_local, linedescription);
 
   draw_buffer_info.current_ptr = (UBY*)framebuffer;
 
@@ -1347,9 +1347,7 @@ static void drawLineHAM2x2_16Bit(graph_line *linedescription, ULO nextlineoffset
     drawSetPixel2x2_16Bit(framebuffer++, nextlineoffset1, drawMake32BitColorFrom16Bit(hampixel));
   }
 
-  // below and above calls to spriteMerge could be optimized by calling a single 2x2x16 function
-  line_exact_sprites->MergeHAM2x16((ULO*)draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM2x16(((ULO*)draw_buffer_current_ptr_local) + nextlineoffset1, linedescription);
+  line_exact_sprites->MergeHAM2x2x16((ULO*)draw_buffer_current_ptr_local, linedescription, nextlineoffset1);
 
   draw_buffer_info.current_ptr = (UBY*)framebuffer;
 
@@ -1393,9 +1391,7 @@ static void drawLineHAM4x2_16Bit(graph_line *linedescription, ULO nextlineoffset
     drawSetPixel4x2_16Bit(framebuffer++, nextlineoffset1, drawMake64BitColorFrom16Bit(hampixel));
   }
 
-  // below and above calls to spriteMerge could be optimized by calling a single 2x2x16 function
-  line_exact_sprites->MergeHAM4x16((ULL*)draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM4x16(((ULL*)draw_buffer_current_ptr_local) + nextlineoffset1, linedescription);
+  line_exact_sprites->MergeHAM4x2x16((ULL*)draw_buffer_current_ptr_local, linedescription, nextlineoffset1);
 
   draw_buffer_info.current_ptr = (UBY*)framebuffer;
 
@@ -1441,11 +1437,7 @@ static void drawLineHAM4x4_16Bit(graph_line *linedescription, ULO nextlineoffset
     drawSetPixel4x4_16Bit(framebuffer++, nextlineoffset1, nextlineoffset2, nextlineoffset3, drawMake64BitColorFrom16Bit(hampixel));
   }
 
-  // below and above calls to spriteMerge could be optimized by calling a single 2x2x16 function
-  line_exact_sprites->MergeHAM4x16((ULL*)draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM4x16(((ULL*)draw_buffer_current_ptr_local) + nextlineoffset1, linedescription);
-  line_exact_sprites->MergeHAM4x16(((ULL*)draw_buffer_current_ptr_local) + nextlineoffset2, linedescription);
-  line_exact_sprites->MergeHAM4x16(((ULL*)draw_buffer_current_ptr_local) + nextlineoffset3, linedescription);
+  line_exact_sprites->MergeHAM4x4x16((ULL*)draw_buffer_current_ptr_local, linedescription, nextlineoffset1, nextlineoffset2, nextlineoffset3);
 
   draw_buffer_info.current_ptr = (UBY*)framebuffer;
 
@@ -1620,7 +1612,7 @@ void drawLineBG2x1_16Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x1_16bit_tmp);
 #endif
 
-  drawLineSegmentBG2x1_16Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x1_16Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x1_16bit_tmp, &dlsbg2x1_16bit, &dlsbg2x1_16bit_times);
@@ -1642,7 +1634,7 @@ void drawLineBG2x2_16Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x2_16bit_tmp);
 #endif
 
-  drawLineSegmentBG2x2_16Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x2_16Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x2_16bit_tmp, &dlsbg2x2_16bit, &dlsbg2x2_16bit_times);
@@ -1664,7 +1656,7 @@ void drawLineBG4x2_16Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x2_16bit_tmp);
 #endif
 
-  drawLineSegmentBG4x2_16Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x2_16Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x2_16bit_tmp, &dlsbg4x2_16bit, &dlsbg4x2_16bit_times);
@@ -1686,7 +1678,7 @@ void drawLineBG4x4_16Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x4_16bit_tmp);
 #endif
 
-  drawLineSegmentBG4x4_16Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x4_16Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x4_16bit_tmp, &dlsbg4x4_16bit, &dlsbg4x4_16bit_times);
@@ -2283,7 +2275,7 @@ static void drawLineHAM2x1_24Bit(graph_line *linedescription, ULO nextlineoffset
     framebuffer += 6;
   }
 
-  line_exact_sprites->MergeHAM2x24(draw_buffer_current_ptr_local, linedescription);
+  line_exact_sprites->MergeHAM2x1x24(draw_buffer_current_ptr_local, linedescription);
 
   draw_buffer_info.current_ptr = framebuffer;
 
@@ -2327,8 +2319,7 @@ static void drawLineHAM2x2_24Bit(graph_line *linedescription, ULO nextlineoffset
     framebuffer += 6;
   }
 
-  line_exact_sprites->MergeHAM2x24(draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM2x24(draw_buffer_current_ptr_local + nextlineoffset * 4, linedescription);
+  line_exact_sprites->MergeHAM2x2x24(draw_buffer_current_ptr_local, linedescription, nextlineoffset);
 
   draw_buffer_info.current_ptr = framebuffer;
 
@@ -2372,8 +2363,7 @@ static void drawLineHAM4x2_24Bit(graph_line *linedescription, ULO nextlineoffset
     framebuffer += 12;
   }
 
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local + nextlineoffset * 4, linedescription);
+  line_exact_sprites->MergeHAM4x2x24(draw_buffer_current_ptr_local, linedescription, nextlineoffset);
 
   draw_buffer_info.current_ptr = framebuffer;
 
@@ -2419,10 +2409,7 @@ static void drawLineHAM4x4_24Bit(graph_line *linedescription, ULO nextlineoffset
     framebuffer += 12;
   }
 
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local, linedescription);
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local + nextlineoffset * 4, linedescription);
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local + nextlineoffset2 * 4, linedescription);
-  line_exact_sprites->MergeHAM4x24(draw_buffer_current_ptr_local + nextlineoffset3 * 4, linedescription);
+  line_exact_sprites->MergeHAM4x4x24(draw_buffer_current_ptr_local, linedescription, nextlineoffset, nextlineoffset2, nextlineoffset3);
 
   draw_buffer_info.current_ptr = framebuffer;
 
@@ -2596,7 +2583,7 @@ void drawLineBG2x1_24Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x1_24bit_tmp);
 #endif
 
-  drawLineSegmentBG2x1_24Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x1_24Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x1_24bit_tmp, &dlsbg2x1_24bit, &dlsbg2x1_24bit_times);
@@ -2618,7 +2605,7 @@ void drawLineBG2x2_24Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x2_24bit_tmp);
 #endif
 
-  drawLineSegmentBG2x2_24Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x2_24Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x2_24bit_tmp, &dlsbg2x2_24bit, &dlsbg2x2_24bit_times);
@@ -2640,7 +2627,7 @@ void drawLineBG4x2_24Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x2_24bit_tmp);
 #endif
 
-  drawLineSegmentBG4x2_24Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x2_24Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x2_24bit_tmp, &dlsbg4x2_24bit, &dlsbg4x2_24bit_times);
@@ -2662,7 +2649,7 @@ void drawLineBG4x4_24Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x4_24bit_tmp);
 #endif
 
-  drawLineSegmentBG4x4_24Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x4_24Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x4_24bit_tmp, &dlsbg4x4_24bit, &dlsbg4x4_24bit_times);
@@ -3239,7 +3226,7 @@ static void drawLineHAM2x1_32Bit(graph_line *linedescription, ULO nextlineoffset
     drawSetPixel2x1_32Bit(framebuffer++, drawMake64BitColorFrom32Bit(hampixel));
   }
 
-  line_exact_sprites->MergeHAM2x1x32((ULO*)draw_buffer_current_ptr_local, linedescription);
+  line_exact_sprites->MergeHAM2x1x32((ULL*)draw_buffer_current_ptr_local, linedescription);
 
   draw_buffer_info.current_ptr = (UBY*)framebuffer;
 
@@ -3553,7 +3540,7 @@ void drawLineBG2x1_32Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x1_32bit_tmp);
 #endif
 
-  drawLineSegmentBG2x1_32Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x1_32Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x1_32bit_tmp, &dlsbg2x1_32bit, &dlsbg2x1_32bit_times);
@@ -3575,7 +3562,7 @@ void drawLineBG2x2_32Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg2x2_32bit_tmp);
 #endif
 
-  drawLineSegmentBG2x2_32Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG2x2_32Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg2x2_32bit_tmp, &dlsbg2x2_32bit, &dlsbg2x2_32bit_times);
@@ -3597,7 +3584,7 @@ void drawLineBG4x2_32Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x2_32bit_tmp);
 #endif
 
-  drawLineSegmentBG4x2_32Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x2_32Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x2_32bit_tmp, &dlsbg4x2_32bit, &dlsbg4x2_32bit_times);
@@ -3619,7 +3606,7 @@ void drawLineBG4x4_32Bit(graph_line *linedescription, ULO nextlineoffset)
   drawTscBefore(&dlsbg4x4_32bit_tmp);
 #endif
 
-  drawLineSegmentBG4x4_32Bit(drawGetClipWidth(), linedescription->colors[0], nextlineoffset);
+  drawLineSegmentBG4x4_32Bit(drawGetInternalClip().GetWidth(), linedescription->colors[0], nextlineoffset);
 
 #ifdef DRAW_TSC_PROFILE
   drawTscAfter(&dlsbg4x4_32bit_tmp, &dlsbg4x4_32bit, &dlsbg4x4_32bit_times);
@@ -3680,26 +3667,26 @@ draw_line_func draw_line_HAM_lores_funcs[3][4] =
   {drawLineHAM2x1_32Bit, drawLineHAM2x2_32Bit, drawLineHAM4x2_32Bit, drawLineHAM4x4_32Bit}
 };
 
-ULO drawGetColorDepthIndex(draw_mode *dm)
+static ULO drawGetColorDepthIndex()
 {
-  if (dm->bits == 15 || dm->bits == 16)
+  if (draw_buffer_info.bits == 15 || draw_buffer_info.bits == 16)
   {
     return 0;
   }
-  else if (dm->bits == 24)
+  else if (draw_buffer_info.bits == 24)
   {
     return 1;
   }
-  // dm->bits == 32
+  // draw_buffer_info.bits == 32
   return 2;
 }
 
 ULO drawGetScaleIndex(void)
 {
-  ULO scale_factor = drawGetDisplayScaleFactor();
+  ULO internal_scale_factor = drawGetInternalScaleFactor();
   if (drawGetUseInterlacedRendering())
   {
-    if (scale_factor == 2)
+    if (internal_scale_factor == 2)
     {
       return 0; // 2x1
     }
@@ -3710,15 +3697,15 @@ ULO drawGetScaleIndex(void)
   }
 
   // <Not interlaced>
-  if (scale_factor == 2 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SCANLINES)
+  if (internal_scale_factor == 2 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SCANLINES)
   {
     return 0; // 2x1
   }
-  else if (scale_factor == 2 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SOLID)
+  else if (internal_scale_factor == 2 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SOLID)
   {
     return 1; // 2x2
   }
-  else if (scale_factor == 4 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SCANLINES)
+  else if (internal_scale_factor == 4 && drawGetDisplayScaleStrategy() == DISPLAYSCALE_STRATEGY_SCANLINES)
   {
     return 2; // 4x2
   }
@@ -3728,9 +3715,9 @@ ULO drawGetScaleIndex(void)
   }
 }
 
-void drawModeFunctionsInitialize(draw_mode *dm)
+void drawModeFunctionsInitialize()
 {
-  ULO colordepth_index = drawGetColorDepthIndex(dm);
+  ULO colordepth_index = drawGetColorDepthIndex();
   ULO scale_index = drawGetScaleIndex();
 
   draw_line_BPL_manage_routine = draw_line_BPL_manage_funcs[colordepth_index][scale_index];

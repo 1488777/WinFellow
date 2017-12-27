@@ -1,4 +1,3 @@
-/* @(#) $Id: CIA.C,v 1.10 2012-08-12 16:51:02 peschau Exp $ */
 /*=========================================================================*/
 /* Fellow                                                                  */
 /* Cia emulation                                                           */
@@ -25,13 +24,7 @@
 /* Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.          */
 /*=========================================================================*/
 
-/* ---------------- CHANGE LOG ----------------- 
-Tuesday, September 19, 2000
-- changed ciaReadApra in order to support autofire
-*/
-
 #include "defs.h"
-#include "FELLOW.H"
 #include "bus.h"
 #include "gameport.h"
 #include "fmem.h"
@@ -181,6 +174,14 @@ void ciaRaiseIndexIRQ(void) {
   ciaRaiseIRQ(1, CIA_FLAG_IRQ);
 }
 
+void ciaCheckAlarmMatch(ULO i)
+{
+  if (cia[i].ev == cia[i].evalarm)
+  {
+    ciaRaiseIRQ(i, CIA_ALARM_IRQ);
+  }
+}
+
 /* Timeout handlers */
 
 void ciaHandleTBTimeout(ULO i) {
@@ -218,8 +219,7 @@ void ciaUpdateEventCounter(ULO i)
   if (!cia[i].evwritelatching)
   {
     cia[i].ev = (cia[i].ev + 1) & 0xffffff;
-    if (cia[i].evalarm == cia[i].ev)
-      ciaRaiseIRQ(i, CIA_ALARM_IRQ);
+    ciaCheckAlarmMatch(i);
   }
 }
 
@@ -387,16 +387,32 @@ void ciaWriteAprb(UBY data)
 
 void ciaWriteBprb(UBY data)
 {
-  int i, j;
+  int j = 0;
+  BOOLE motor_was_high = (cia[1].prb & 0x80) == 0x80;
+  BOOLE motor_is_high = (data & 0x80) == 0x80;
 
-  j = 0;
-  for (i = 8; i < 0x80; i <<= 1, j++)
-    if ((cia[1].prb & i) && !(data & i))
-      floppyMotorSet(j, (data & 0x80)>>7);
+  for (int i = 8; i < 0x80; i <<= 1, j++)
+  {
+    BOOLE sel_was_high = cia[1].prb & i;
+    BOOLE sel_is_high = data & i;
+    if (sel_was_high && !sel_is_high)
+    {
+      // Motor is latched when sel goes from high to low
+      // According to HRM motor bit must be set up in advance by software
+      if (!motor_was_high || !motor_is_high)
+      {
+        floppyMotorSet(j, 0); // 0 is on
+      }
+      else if (motor_was_high)
+      {
+        floppyMotorSet(j, 1); // 1 is off
+      }
+    }
+  }
   cia[1].prb = data;
-  floppySelectedSet((data & 0x78)>>3);
-  floppySideSet((data & 4)>>2);
-  floppyDirSet((data & 2)>>1);
+  floppySelectedSet((data & 0x78) >> 3);
+  floppySideSet((data & 4) >> 2);
+  floppyDirSet((data & 2) >> 1);
   floppyStepSet(data & 1);
 }
 
@@ -570,7 +586,9 @@ UBY ciaReadevlo(ULO i)
 UBY ciaReadevmi(ULO i)
 {
   if (cia[i].evlatching)
-    return (UBY)(cia[i].evlatch>>8);
+  {
+    return (UBY)(cia[i].evlatch >> 8);
+  }
   return (UBY)(cia[i].ev>>8);
 }
 
@@ -583,26 +601,45 @@ UBY ciaReadevhi(ULO i)
 
 void ciaWriteevlo(ULO i, UBY data)
 {
-  cia[i].evwritelatching = FALSE;
-  cia[i].evwritelatch = (cia[i].evwritelatch & 0xffff00) | ((ULO)data);
-  if (cia[i].crb & 0x80)
-    cia[i].evalarm = cia[i].evwritelatch;
-  else
+  if (cia[i].crb & 0x80)  // Alarm
+  {
+    cia[i].evalarm = (cia[i].evalarm & 0xffff00) | (ULO)data;
+  }
+  else // Time of day
+  {
+    cia[i].evwritelatching = FALSE;
+    cia[i].evwritelatch = (cia[i].evwritelatch & 0xffff00) | (ULO)data;
     cia[i].ev = cia[i].evwritelatch;
-  if (cia[i].ev == cia[i].evalarm)
-    ciaRaiseIRQ(i, CIA_ALARM_IRQ);
+  }
+  ciaCheckAlarmMatch(i);
 }
 
 void ciaWriteevmi(ULO i, UBY data)
 {
-  cia[i].evwritelatching = TRUE;
-  cia[i].evwritelatch = (cia[i].evwritelatch & 0xff00ff) | (((ULO)data)<<8);
+  if (cia[i].crb & 0x80)  // Alarm
+  {
+    cia[i].evalarm = (cia[i].evalarm & 0xff00ff) | ((ULO)data << 8);
+    ciaCheckAlarmMatch(i);
+  }
+  else // Time of day
+  {
+    cia[i].evwritelatching = TRUE;
+    cia[i].evwritelatch = (cia[i].evwritelatch & 0xff00ff) | (((ULO)data) << 8);
+  }
 }
 
 void ciaWriteevhi(ULO i, UBY data)
 {
-  cia[i].evwritelatching = TRUE;
-  cia[i].evwritelatch = (cia[i].evwritelatch & 0xffff) | (((ULO)data)<<16);
+  if (cia[i].crb & 0x80)  // Alarm
+  {
+    cia[i].evalarm = (cia[i].evalarm & 0xffff) | ((ULO)data << 16);
+    ciaCheckAlarmMatch(i);
+  }
+  else // Time of day
+  {
+    cia[i].evwritelatching = TRUE;
+    cia[i].evwritelatch = (cia[i].evwritelatch & 0xffff) | (((ULO)data) << 16);
+  }
 }
 
 /* ICR */
