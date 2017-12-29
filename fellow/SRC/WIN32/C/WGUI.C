@@ -2897,7 +2897,7 @@ INT_PTR CALLBACK wguiHardfileCreateDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wP
 	  break;
         }
         // creates the HDF file 
-        fhfileCreate(hfile);
+        hardfileHandler.Create(hfile);
         strncpy(wgui_current_hardfile_edit->filename, hfile.filename, CFG_FILENAME_LENGTH);
       }
     case IDCANCEL:

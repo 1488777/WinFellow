@@ -566,7 +566,7 @@ const STR *memory_kickimage_versionstrings[14] = {
   {
     if ((address & 0xffffff) == 0xf40000)
     {
-      fhfileDo(data);
+      hardfileHandler.Do(data);
     }
   }
 

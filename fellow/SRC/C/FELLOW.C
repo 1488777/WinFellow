@@ -294,7 +294,7 @@ static void fellowRuntimeErrorCheck(void) {
 void fellowSoftReset(void) {
   memorySoftReset();
   interruptSoftReset();
-  fhfileHardReset();
+  hardfileHandler.HardReset();
   spriteHardReset();
   drawHardReset();
   kbdHardReset();
@@ -320,7 +320,7 @@ void fellowSoftReset(void) {
 void fellowHardReset(void) {
   memoryHardReset();
   interruptHardReset();
-  fhfileHardReset();
+  hardfileHandler.HardReset();
   spriteHardReset();
   drawHardReset();
   kbdHardReset();
@@ -586,7 +586,7 @@ static void fellowModulesStartup(int argc, char *argv[])
   chipsetStartup();
   timerStartup();
   fsNavigStartup(argv);
-  fhfileStartup();
+  hardfileHandler.Startup();
   ffilesysStartup();
   spriteStartup();
   iniStartup();
@@ -644,7 +644,7 @@ static void fellowModulesShutdown(void)
   iniShutdown();
   spriteShutdown();
   ffilesysShutdown();
-  fhfileShutdown();
+  hardfileHandler.Shutdown();
   fsNavigSetCWDStartupDir();
   fsNavigShutdown();
   timerShutdown();

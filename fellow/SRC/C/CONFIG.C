@@ -2405,34 +2405,34 @@ BOOLE cfgManagerConfigurationActivate(cfgManager *configmanager)
   /* Hardfile configuration                                                   */
   /*==========================================================================*/
 
-  if (cfgGetUseAutoconfig(config) != fhfileGetEnabled())
+  if (cfgGetUseAutoconfig(config) != hardfileHandler.GetEnabled())
   {
     needreset = TRUE;
-    fhfileClear();
-    fhfileSetEnabled(cfgGetUseAutoconfig(config));
+    hardfileHandler.Clear();
+    hardfileHandler.SetEnabled(cfgGetUseAutoconfig(config));
   }
-  if (fhfileGetEnabled())
+
+  if (hardfileHandler.GetEnabled())
   {
     for (i = 0; i < cfgGetHardfileCount(config); i++)
     {
-      cfg_hardfile hardfile;
       fhfile_dev fhardfile;
-      hardfile = cfgGetHardfile(config, i);
+      cfg_hardfile hardfile = cfgGetHardfile(config, i);
       fhardfile.bytespersector_original = hardfile.bytespersector;
       fhardfile.readonly_original = hardfile.readonly;
       fhardfile.reservedblocks_original = hardfile.reservedblocks;
       fhardfile.sectorspertrack = hardfile.sectorspertrack;
       fhardfile.surfaces = hardfile.surfaces;
       strncpy(fhardfile.filename, hardfile.filename, CFG_FILENAME_LENGTH);
-      if (!fhfileCompareHardfile(fhardfile, i))
+      if (!hardfileHandler.CompareHardfile(fhardfile, i))
       {
 	needreset = TRUE;
-	fhfileSetHardfile(fhardfile, i);
+        hardfileHandler.SetHardfile(fhardfile, i);
       }
     }
     for (i = cfgGetHardfileCount(config); i < FHFILE_MAX_DEVICES; i++)
     {
-      needreset |= fhfileRemoveHardfile(i);
+      needreset |= hardfileHandler.RemoveHardfile(i);
     }
   }
 
@@ -2453,9 +2453,8 @@ BOOLE cfgManagerConfigurationActivate(cfgManager *configmanager)
   {
     for (i = 0; i < cfgGetFilesystemCount(config); i++)
     {
-      cfg_filesys filesys;
       ffilesys_dev ffilesys;
-      filesys = cfgGetFilesystem(config, i);
+      cfg_filesys filesys = cfgGetFilesystem(config, i);
       strncpy(ffilesys.volumename, filesys.volumename, FFILESYS_MAX_VOLUMENAME);
       strncpy(ffilesys.rootpath, filesys.rootpath, CFG_FILENAME_LENGTH);
       ffilesys.readonly = filesys.readonly;

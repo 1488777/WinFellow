@@ -35,8 +35,7 @@
 #include "RetroPlatform.h"
 #endif
 
-#include <list>
-#include <vector>
+HardfileHandler hardfileHandler;
 
 /*====================*/
 /* fhfile.device      */
@@ -49,33 +48,116 @@
 /* offset 4092 - configdev pointer   */
 /*===================================*/
 
-/*===================================================================*/
-/* The hardfile device is at least in spirit based on ideas found in */
-/* the sources below:                                                */
-/* - The device driver source found on Fish 39                       */
-/*   and other early Fish-disks                                      */
-/* - UAE was useful for test and compare when the device was written */
-/*   and didn't work                                                 */
-/*===================================================================*/
+/*===========================================================================*/
+/* Hardfile card init                                                        */
+/*===========================================================================*/
 
-fhfile_dev fhfile_devs[FHFILE_MAX_DEVICES];
-vector<RDBFileSystemHeader*> fhfile_rdb_filesystems;
-ULO fhfile_romstart;
-ULO fhfile_bootcode;
-ULO fhfile_configdev;
-UBY fhfile_rom[65536];
+void HardfileHandler_CardInit()
+{
+  hardfileHandler.CardInit();
+}
+
+void HardfileHandler_CardMap(ULO mapping)
+{
+  hardfileHandler.CardMap(mapping);
+}
+
+UBY HardfileHandler_ReadByte(ULO address)
+{
+  return hardfileHandler.ReadByte(address);
+}
+
+UWO HardfileHandler_ReadWord(ULO address)
+{
+  return hardfileHandler.ReadWord(address);
+}
+
+ULO HardfileHandler_ReadLong(ULO address)
+{
+  return hardfileHandler.ReadLong(address);
+}
+
+void HardfileHandler_WriteByte(UBY data, ULO address)
+{
+}
+
+void HardfileHandler_WriteWord(UWO data, ULO address)
+{
+}
+
+void HardfileHandler_WriteLong(ULO data, ULO address)
+{
+}
+
+/*================================================================*/
+/* fhfile_card_init                                               */
+/* In order to obtain a configDev struct.                         */
+/*================================================================*/
+
+void HardfileHandler::CardInit()
+{
+  memoryEmemSet(0, 0xd1);
+  memoryEmemSet(8, 0xc0);
+  memoryEmemSet(4, 2);
+  memoryEmemSet(0x10, 2011 >> 8);
+  memoryEmemSet(0x14, 2011 & 0xf);
+  memoryEmemSet(0x18, 0);
+  memoryEmemSet(0x1c, 0);
+  memoryEmemSet(0x20, 0);
+  memoryEmemSet(0x24, 1);
+  memoryEmemSet(0x28, 0x10);
+  memoryEmemSet(0x2c, 0);
+  memoryEmemSet(0x40, 0);
+  memoryEmemMirror(0x1000, _rom + 0x1000, 0xa0);
+}
+
+/*====================================================*/
+/* fhfile_card_map                                    */
+/* The rom must be remapped to the location specified.*/
+/*====================================================*/
+
+void HardfileHandler::CardMap(ULO mapping)
+{
+  _romstart = (mapping << 8) & 0xff0000;
+  ULO bank = _romstart >> 16;
+  memoryBankSet(HardfileHandler_ReadByte,
+    HardfileHandler_ReadWord,
+    HardfileHandler_ReadLong,
+    HardfileHandler_WriteByte,
+    HardfileHandler_WriteWord,
+    HardfileHandler_WriteLong,
+    _rom,
+    bank,
+    bank,
+    FALSE);
+}
 
 /*============================================================================*/
-/* Configuration properties                                                   */
+/* Functions to get and set data in the fhfile memory area                    */
 /*============================================================================*/
 
-BOOLE fhfile_enabled;
+UBY HardfileHandler::ReadByte(ULO address)
+{
+  return _rom[address & 0xffff];
+}
 
-bool fhfileHasZeroDevices()
+UWO HardfileHandler::ReadWord(ULO address)
+{
+  UBY *p = _rom + (address & 0xffff);
+  return (((UWO)p[0]) << 8) | (UWO)p[1];
+}
+
+ULO HardfileHandler::ReadLong(ULO address)
+{
+  UBY *p = _rom + (address & 0xffff);
+  return (((ULO)p[0]) << 24) | (((ULO)p[1]) << 16) | (((ULO)p[2]) << 8) | (ULO)p[3];
+}
+
+bool HardfileHandler::HasZeroDevices()
 {
   for (ULO i = 0; i < FHFILE_MAX_DEVICES; i++)
   {
-    if (fhfile_devs[i].F != nullptr)
+    if (_devs[i].F != nullptr)
     {
       return false;
     }
@@ -83,12 +165,12 @@ bool fhfileHasZeroDevices()
   return true;
 }
 
-int fhfileFindOlderOrSameFileSystemVersion(ULO dosType, ULO version)
+int HardfileHandler::FindOlderOrSameFileSystemVersion(ULO dosType, ULO version)
 {
-  int size = fhfile_rdb_filesystems.size();
+  int size = _rdb_filesystems.size();
   for (int index = 0; index < size; index++)
   {
-    if (fhfile_rdb_filesystems[index]->IsOlderOrSameFileSystemVersion(dosType, version))
+    if (_rdb_filesystems[index]->IsOlderOrSameFileSystemVersion(dosType, version))
     {
       return index;
     }
@@ -96,46 +178,46 @@ int fhfileFindOlderOrSameFileSystemVersion(ULO dosType, ULO version)
   return -1;
 }
 
-void fhfileAddFileSystemsFromRdb(fhfile_dev *device)
+void HardfileHandler::AddFileSystemsFromRdb(fhfile_dev *device)
 {
   if (device->F != nullptr && device->rdb != nullptr)
   {
     for (auto fileSystemHeader : device->rdb->FileSystemHeaders)
     {
-      int olderVersionIndex = fhfileFindOlderOrSameFileSystemVersion(fileSystemHeader->DOSType, fileSystemHeader->Version);
+      int olderVersionIndex = FindOlderOrSameFileSystemVersion(fileSystemHeader->DOSType, fileSystemHeader->Version);
       if (olderVersionIndex == -1)
       {
-        fhfile_rdb_filesystems.push_back(fileSystemHeader);
+        _rdb_filesystems.push_back(fileSystemHeader);
       }
-      else if (fhfile_rdb_filesystems[olderVersionIndex]->Version < fileSystemHeader->Version)
+      else if (_rdb_filesystems[olderVersionIndex]->Version < fileSystemHeader->Version)
       {
         // Replace older fs version with this one
-        fhfile_rdb_filesystems[olderVersionIndex] = fileSystemHeader;
+        _rdb_filesystems[olderVersionIndex] = fileSystemHeader;
       }
       // Ignore if newer or same fs version already added
     }
   }
 }
 
-void fhfileAddFileSystemsFromRdb()
+void HardfileHandler::AddFileSystemsFromRdb()
 {
   for (int i = 0; i < FHFILE_MAX_DEVICES; i++)
   {
-    fhfileAddFileSystemsFromRdb(&fhfile_devs[i]);
+    AddFileSystemsFromRdb(&_devs[i]);
   }
 }
 
-void fhfileEraseOlderOrSameFileSystemVersion(ULO dosType, ULO version)
+void HardfileHandler::EraseOlderOrSameFileSystemVersion(ULO dosType, ULO version)
 {
-  int olderOrSameVersionIndex = fhfileFindOlderOrSameFileSystemVersion(dosType, version);
+  int olderOrSameVersionIndex = FindOlderOrSameFileSystemVersion(dosType, version);
   if (olderOrSameVersionIndex != -1)
   {
-    fellowAddLog("fhfile: Erased RDB filesystem entry (%.8X, %.8X), newer version (%.8X, %.8X) found in RDB or newer/same version supported by Kickstart.\n", fhfile_rdb_filesystems[olderOrSameVersionIndex]->DOSType, fhfile_rdb_filesystems[olderOrSameVersionIndex]->Version, dosType, version);
-    fhfile_rdb_filesystems.erase(fhfile_rdb_filesystems.begin() + olderOrSameVersionIndex);
+    fellowAddLog("fhfile: Erased RDB filesystem entry (%.8X, %.8X), newer version (%.8X, %.8X) found in RDB or newer/same version supported by Kickstart.\n", _rdb_filesystems[olderOrSameVersionIndex]->DOSType, _rdb_filesystems[olderOrSameVersionIndex]->Version, dosType, version);
+    _rdb_filesystems.erase(_rdb_filesystems.begin() + olderOrSameVersionIndex);
   }
 }
 
-void fhfileSetPhysicalGeometryFromRigidDiskBlock(fhfile_dev *fhfile)
+void HardfileHandler::SetPhysicalGeometryFromRigidDiskBlock(fhfile_dev *fhfile)
 {
   fhfile->bytespersector = fhfile->rdb->BlockSize;
   fhfile->bytespersector_original = fhfile->rdb->BlockSize;
@@ -148,51 +230,51 @@ void fhfileSetPhysicalGeometryFromRigidDiskBlock(fhfile_dev *fhfile)
   fhfile->highCylinder = fhfile->rdb->HighCylinder;
 }
 
-void fhfileInitializeHardfile(ULO index)
+void HardfileHandler::InitializeHardfile(ULO index)
 {
   fs_navig_point *fsnp;
 
-  if (fhfile_devs[index].F != nullptr)                     /* Close old hardfile */
+  if (_devs[index].F != nullptr)                     /* Close old hardfile */
   {
-    fclose(fhfile_devs[index].F);
+    fclose(_devs[index].F);
   }
-  fhfile_devs[index].F = nullptr;                           /* Set config values */
-  fhfile_devs[index].status = FHFILE_NONE;
-  if ((fsnp = fsWrapMakePoint(fhfile_devs[index].filename)) != nullptr)
+  _devs[index].F = nullptr;                           /* Set config values */
+  _devs[index].status = FHFILE_NONE;
+  if ((fsnp = fsWrapMakePoint(_devs[index].filename)) != nullptr)
   {
-    fhfile_devs[index].readonly |= (!fsnp->writeable);
+    _devs[index].readonly |= (!fsnp->writeable);
     ULO size = fsnp->size;
-    fhfile_devs[index].F = fopen(fhfile_devs[index].filename, (fhfile_devs[index].readonly) ? "rb" : "r+b");
+    _devs[index].F = fopen(_devs[index].filename, _devs[index].readonly ? "rb" : "r+b");
 
-    if (fhfile_devs[index].F != nullptr)                          /* Open file */
+    if (_devs[index].F != nullptr)                          /* Open file */
     {
-      RDBFileReader reader(fhfile_devs[index].F);
-      fhfile_devs[index].hasRigidDiskBlock = RDBHandler::HasRigidDiskBlock(reader);
+      RDBFileReader reader(_devs[index].F);
+      _devs[index].hasRigidDiskBlock = RDBHandler::HasRigidDiskBlock(reader);
 
-      if (fhfile_devs[index].hasRigidDiskBlock)
+      if (_devs[index].hasRigidDiskBlock)
       {
         // RDB configured hardfile
-        fhfile_devs[index].rdb = RDBHandler::GetDriveInformation(reader);
-        fhfileSetPhysicalGeometryFromRigidDiskBlock(&fhfile_devs[index]);
-        fhfile_devs[index].size = size;
-        fhfile_devs[index].status = FHFILE_HDF;
+        _devs[index].rdb = RDBHandler::GetDriveInformation(reader);
+        SetPhysicalGeometryFromRigidDiskBlock(&_devs[index]);
+        _devs[index].size = size;
+        _devs[index].status = FHFILE_HDF;
       }
       else
       {
         // Manually configured hardfile
-        ULO track_size = (fhfile_devs[index].sectorspertrack * fhfile_devs[index].surfaces * fhfile_devs[index].bytespersector);
+        ULO track_size = (_devs[index].sectorspertrack * _devs[index].surfaces * _devs[index].bytespersector);
         if (size < track_size)
         {
           /* Error: File must be at least one track long */
-          fclose(fhfile_devs[index].F);
-          fhfile_devs[index].F = nullptr;
-          fhfile_devs[index].status = FHFILE_NONE;
+          fclose(_devs[index].F);
+          _devs[index].F = nullptr;
+          _devs[index].status = FHFILE_NONE;
         }
         else                                                    /* File is OK */
         {
-          fhfile_devs[index].tracks = size / track_size;
-          fhfile_devs[index].size = fhfile_devs[index].tracks * track_size;
-          fhfile_devs[index].status = FHFILE_HDF;
+          _devs[index].tracks = size / track_size;
+          _devs[index].size = _devs[index].tracks * track_size;
+          _devs[index].status = FHFILE_HDF;
         }
       }
     }
@@ -202,57 +284,60 @@ void fhfileInitializeHardfile(ULO index)
 
 /* Returns TRUE if a hardfile was inserted */
 
-BOOLE fhfileRemoveHardfile(ULO index)
+BOOLE HardfileHandler::RemoveHardfile(ULO index)
 {
   BOOLE result = FALSE;
-  if (index >= FHFILE_MAX_DEVICES) return result;
-  if (fhfile_devs[index].F != nullptr)
+  if (index >= FHFILE_MAX_DEVICES)
   {
-    fflush(fhfile_devs[index].F);
-    fclose(fhfile_devs[index].F);
+    return result;
+  }
+  if (_devs[index].F != nullptr)
+  {
+    fflush(_devs[index].F);
+    fclose(_devs[index].F);
     result = TRUE;
   }
-  if (fhfile_devs[index].rdb != nullptr)
+  if (_devs[index].rdb != nullptr)
   {
-    delete fhfile_devs[index].rdb;
-    fhfile_devs[index].rdb = nullptr;
+    delete _devs[index].rdb;
+    _devs[index].rdb = nullptr;
   }
-  memset(&(fhfile_devs[index]), 0, sizeof(fhfile_dev));
-  fhfile_devs[index].status = FHFILE_NONE;
+  memset(&(_devs[index]), 0, sizeof(fhfile_dev));
+  _devs[index].status = FHFILE_NONE;
   return result;
 }
 
-void fhfileSetEnabled(BOOLE enabled)
+void HardfileHandler::SetEnabled(BOOLE enabled)
 {
-  fhfile_enabled = enabled;
+  _enabled = enabled;
 }
 
-BOOLE fhfileGetEnabled()
+BOOLE HardfileHandler::GetEnabled()
 {
-  return fhfile_enabled;
+  return _enabled;
 }
 
-void fhfileSetHardfile(fhfile_dev hardfile, ULO index)
+void HardfileHandler::SetHardfile(fhfile_dev hardfile, ULO index)
 {
   if (index >= FHFILE_MAX_DEVICES)
   {
     return;
   }
-  fhfileRemoveHardfile(index);
-  strncpy(fhfile_devs[index].filename, hardfile.filename, CFG_FILENAME_LENGTH);
-  fhfile_devs[index].readonly = hardfile.readonly_original;
-  fhfile_devs[index].readonly_original = hardfile.readonly_original;
-  fhfile_devs[index].bytespersector = (hardfile.bytespersector_original & 0xfffffffc);
-  fhfile_devs[index].bytespersector_original = hardfile.bytespersector_original;
-  fhfile_devs[index].sectorspertrack = hardfile.sectorspertrack;
-  fhfile_devs[index].surfaces = hardfile.surfaces;
-  fhfile_devs[index].reservedblocks = hardfile.reservedblocks_original;
-  fhfile_devs[index].reservedblocks_original = hardfile.reservedblocks_original;
-  if (fhfile_devs[index].reservedblocks < 1)
+  RemoveHardfile(index);
+  strncpy(_devs[index].filename, hardfile.filename, CFG_FILENAME_LENGTH);
+  _devs[index].readonly = hardfile.readonly_original;
+  _devs[index].readonly_original = hardfile.readonly_original;
+  _devs[index].bytespersector = (hardfile.bytespersector_original & 0xfffffffc);
+  _devs[index].bytespersector_original = hardfile.bytespersector_original;
+  _devs[index].sectorspertrack = hardfile.sectorspertrack;
+  _devs[index].surfaces = hardfile.surfaces;
+  _devs[index].reservedblocks = hardfile.reservedblocks_original;
+  _devs[index].reservedblocks_original = hardfile.reservedblocks_original;
+  if (_devs[index].reservedblocks < 1)
   {
-    fhfile_devs[index].reservedblocks = 1;
+    _devs[index].reservedblocks = 1;
   }
-  fhfileInitializeHardfile(index);
+  InitializeHardfile(index);
 
 #ifdef RETRO_PLATFORM
   if(RP.GetHeadlessMode())
@@ -260,30 +345,33 @@ void fhfileSetHardfile(fhfile_dev hardfile, ULO index)
 #endif
 }
 
-bool fhfileCompareHardfile(fhfile_dev hardfile, ULO index)
+bool HardfileHandler::CompareHardfile(fhfile_dev hardfile, ULO index)
 {
   if (index >= FHFILE_MAX_DEVICES)
   {
     return false;
   }
-  return (fhfile_devs[index].readonly_original == hardfile.readonly_original) &&
-    (fhfile_devs[index].bytespersector_original == hardfile.bytespersector_original) &&
-    (fhfile_devs[index].sectorspertrack == hardfile.sectorspertrack) &&
-    (fhfile_devs[index].surfaces == hardfile.surfaces) &&
-    (fhfile_devs[index].reservedblocks_original == hardfile.reservedblocks_original) &&
-    (strncmp(fhfile_devs[index].filename, hardfile.filename, CFG_FILENAME_LENGTH) == 0);
+  return (_devs[index].readonly_original == hardfile.readonly_original) &&
+    (_devs[index].bytespersector_original == hardfile.bytespersector_original) &&
+    (_devs[index].sectorspertrack == hardfile.sectorspertrack) &&
+    (_devs[index].surfaces == hardfile.surfaces) &&
+    (_devs[index].reservedblocks_original == hardfile.reservedblocks_original) &&
+    (strncmp(_devs[index].filename, hardfile.filename, CFG_FILENAME_LENGTH) == 0);
 }
 
-void fhfileClear()
+void HardfileHandler::Clear()
 {
-  for (ULO i = 0; i < FHFILE_MAX_DEVICES; i++) fhfileRemoveHardfile(i);
+  for (ULO i = 0; i < FHFILE_MAX_DEVICES; i++)
+  {
+    RemoveHardfile(i);
+  }
 }
 
 /*===================*/
 /* Set HD led symbol */
 /*===================*/
 
-void fhfileSetLed(bool state)
+void HardfileHandler::SetLed(bool state)
 {
   drawSetLED(4, state);
 }
@@ -292,77 +380,89 @@ void fhfileSetLed(bool state)
 /* BeginIO Commands */
 /*==================*/
 
-void fhfileIgnore(ULO index)
+void HardfileHandler::Ignore(ULO index)
 {
   memoryWriteLong(0, cpuGetAReg(1) + 32);
   cpuSetDReg(0, 0);
 }
 
-BYT fhfileRead(ULO index)
+BYT HardfileHandler::Read(ULO index)
 {
   ULO dest = memoryReadLong(cpuGetAReg(1) + 40);
   ULO offset = memoryReadLong(cpuGetAReg(1) + 44);
   ULO length = memoryReadLong(cpuGetAReg(1) + 36);
 
-  if ((offset + length) > fhfile_devs[index].size)
+  if ((offset + length) > _devs[index].size)
   {
     return -3;
   }
-  fhfileSetLed(true);
+  
+  SetLed(true); // NOTE: This has no effect in standalone since nothing updates the screen in-between
+
 #ifdef RETRO_PLATFORM
   if(RP.GetHeadlessMode())
      RP.PostHardDriveLED(index, true, false);
 #endif
-  fseek(fhfile_devs[index].F, offset, SEEK_SET);
-  fread(memoryAddressToPtr(dest), 1, length, fhfile_devs[index].F);
+
+  fseek(_devs[index].F, offset, SEEK_SET);
+  fread(memoryAddressToPtr(dest), 1, length, _devs[index].F);
   memoryWriteLong(length, cpuGetAReg(1) + 32);
-  fhfileSetLed(false);
+
+  SetLed(false); // NOTE: This has no effect in standalone since nothing updates the screen in-between
+
 #ifdef RETRO_PLATFORM
   if(RP.GetHeadlessMode())
      RP.PostHardDriveLED(index, false, false);
 #endif
+
   return 0;
 }
 
-BYT fhfileWrite(ULO index)
+BYT HardfileHandler::Write(ULO index)
 {
   ULO dest = memoryReadLong(cpuGetAReg(1) + 40);
   ULO offset = memoryReadLong(cpuGetAReg(1) + 44);
   ULO length = memoryReadLong(cpuGetAReg(1) + 36);
 
-  if (fhfile_devs[index].readonly || (offset + length) > fhfile_devs[index].size)
+  if (_devs[index].readonly || (offset + length) > _devs[index].size)
   {
     return -3;
   }
-  fhfileSetLed(true);
-#ifdef RETRO_PLATFORM
+
+  SetLed(true); // NOTE: This has no effect in standalone since nothing updates the screen in-between
+
+  #ifdef RETRO_PLATFORM
   if(RP.GetHeadlessMode())
      RP.PostHardDriveLED(index, true, true);
 #endif
-  fseek(fhfile_devs[index].F, offset, SEEK_SET);
-  fwrite(memoryAddressToPtr(dest),1, length, fhfile_devs[index].F);
+
+  fseek(_devs[index].F, offset, SEEK_SET);
+  fwrite(memoryAddressToPtr(dest),1, length, _devs[index].F);
   memoryWriteLong(length, cpuGetAReg(1) + 32);
-  fhfileSetLed(false);
+
+  SetLed(false); // NOTE: This has no effect in standalone since nothing updates the screen in-between
+
  #ifdef RETRO_PLATFORM
   if(RP.GetHeadlessMode())
      RP.PostHardDriveLED(index, false, true);
 #endif
+
   return 0;
 }
 
-void fhfileGetNumberOfTracks(ULO index)
+void HardfileHandler::GetNumberOfTracks(ULO index)
 {
-  memoryWriteLong(fhfile_devs[index].tracks, cpuGetAReg(1) + 32);
+  memoryWriteLong(_devs[index].tracks, cpuGetAReg(1) + 32);
 }
 
-void fhfileGetDriveType(ULO index)
+void HardfileHandler::GetDriveType(ULO index)
 {
   memoryWriteLong(1, cpuGetAReg(1) + 32);
 }
 
-void fhfileWriteProt(ULO index)
+void HardfileHandler::WriteProt(ULO index)
 {
-  memoryWriteLong(fhfile_devs[index].readonly, cpuGetAReg(1) + 32);
+  memoryWriteLong(_devs[index].readonly, cpuGetAReg(1) + 32);
 }
 
 /*======================================================*/
@@ -372,11 +472,11 @@ void fhfileWriteProt(ULO index)
 /* For later use when filling out the bootnode          */
 /*======================================================*/
 
-void fhfileDoDiag()
+void HardfileHandler::DoDiag()
 {
-  fhfile_configdev = cpuGetAReg(3);
+  _configdev = cpuGetAReg(3);
   memoryDmemSetLongNoCounter(FHFILE_MAX_DEVICES, 4088);
-  memoryDmemSetLongNoCounter(fhfile_configdev, 4092);
+  memoryDmemSetLongNoCounter(_configdev, 4092);
   cpuSetDReg(0, 1);
 }
 
@@ -384,7 +484,7 @@ void fhfileDoDiag()
 /* Native callbacks for device commands */
 /*======================================*/
 
-void fhfileDoOpen()
+void HardfileHandler::DoOpen()
 {
   if (cpuGetDReg(0) < FHFILE_MAX_DEVICES)
   {
@@ -402,22 +502,22 @@ void fhfileDoOpen()
   }
 }
 
-void fhfileDoClose()
+void HardfileHandler::DoClose()
 {
   memoryWriteLong(memoryReadLong(cpuGetAReg(6) + 32) - 1, cpuGetAReg(6) + 32);    /* LIB_OPENCNT */
   cpuSetDReg(0, 0);                                /* ? */
 }
 
-void fhfileDoExpunge()
+void HardfileHandler::DoExpunge()
 {
   cpuSetDReg(0, 0);                                /* ? */
 }
 
-void fhfileDoNULL()
+void HardfileHandler::DoNULL()
 {
 }
 
-void fhfileDoBeginIO()
+void HardfileHandler::DoBeginIO()
 {
   BYT error = 0;
   ULO unit = memoryReadLong(cpuGetAReg(1) + 24);
@@ -426,20 +526,20 @@ void fhfileDoBeginIO()
   switch (cmd)
   {
     case 2:
-      error = fhfileRead(unit);
+      error = Read(unit);
       break;
     case 3:
     case 11:
-      error = fhfileWrite(unit);
+      error = Write(unit);
       break;
     case 18:
-      fhfileGetDriveType(unit);
+      GetDriveType(unit);
       break;
     case 19:
-      fhfileGetNumberOfTracks(unit);
+      GetNumberOfTracks(unit);
       break;
     case 15:
-      fhfileWriteProt(unit);
+      WriteProt(unit);
       break;
     case 4:
     case 5:
@@ -450,7 +550,7 @@ void fhfileDoBeginIO()
     case 14:
     case 20:
     case 21:
-      fhfileIgnore(unit);
+      Ignore(unit);
       break;
     default:
       error = -3;
@@ -461,7 +561,7 @@ void fhfileDoBeginIO()
   memoryWriteByte(error, cpuGetAReg(1) + 31); /* ln_error */
 }
 
-void fhfileDoAbortIO()
+void HardfileHandler::DoAbortIO()
 {
   cpuSetDReg(0, -3);
 }
@@ -469,38 +569,38 @@ void fhfileDoAbortIO()
 // RDB support functions, native callbacks
 
 // Returns the number of RDB filesystem headers in D0
-void fhfileDoGetRDBFileSystemCount()
+void HardfileHandler::DoGetRDBFileSystemCount()
 {
-  ULO count = fhfile_rdb_filesystems.size();
+  ULO count = _rdb_filesystems.size();
 
   fellowAddLog("fhfileDoGetRDBFilesystemCount() - Returns %d\n", count);
 
   cpuSetDReg(0, count);
 }
 
-void fhfileDoGetRDBFileSystemHunkCount()
+void HardfileHandler::DoGetRDBFileSystemHunkCount()
 {
   ULO fsIndex = cpuGetDReg(1);
-  ULO hunkCount = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks.size();
+  ULO hunkCount = _rdb_filesystems[fsIndex]->FileSystemHandler.Hunks.size();
   cpuSetDReg(0, hunkCount);
 }
 
-void fhfileDoGetRDBFileSystemHunkSize()
+void HardfileHandler::DoGetRDBFileSystemHunkSize()
 {
   ULO fsIndex = cpuGetDReg(1);
   ULO hunkIndex = cpuGetDReg(2);
-  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+  ULO hunkSize = _rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
   cpuSetDReg(0, hunkSize);
 }
 
-void fhfileDoRelocateHunk()
+void HardfileHandler::DoRelocateHunk()
 {
   ULO destination = cpuGetDReg(0);
   ULO fsIndex = cpuGetDReg(1);
   ULO hunkIndex = cpuGetDReg(2);
 
-  UBY *relocatedHunkData = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
-  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+  UBY *relocatedHunkData = _rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
+  ULO hunkSize = _rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
   memoryWriteLong(hunkSize + 8, destination);
   memoryWriteLong(0, destination + 4);  // No next segment for now
 
@@ -517,11 +617,11 @@ void fhfileDoRelocateHunk()
   delete relocatedHunkData;
 }
 
-void fhfileDoInitializeRDBFileSystemEntry()
+void HardfileHandler::DoInitializeRDBFileSystemEntry()
 {
   ULO index = cpuGetDReg(1);
   ULO fsEntry = cpuGetDReg(0);
-  RDBFileSystemHeader *fsHeader = fhfile_rdb_filesystems[index];
+  RDBFileSystemHeader *fsHeader = _rdb_filesystems[index];
 
   memoryWriteLong(fsHeader->DOSType, fsEntry + 14);
   memoryWriteLong(fsHeader->Version, fsEntry + 18);
@@ -542,7 +642,7 @@ void fhfileDoInitializeRDBFileSystemEntry()
   }
 }
 
-string fhfileLogGetStringFromMemory(ULO address)
+string HardfileHandler::LogGetStringFromMemory(ULO address)
 {
   string name;
   if (address == 0)
@@ -559,14 +659,16 @@ string fhfileLogGetStringFromMemory(ULO address)
 }
 
 // D0 - pointer to resource list
-void fhfileDoLogAvailableResources()
+void HardfileHandler::DoLogAvailableResources()
 {
   fellowAddLog("fhfileDoLogAvailableResources()\n");
 
   ULO execBase = memoryReadLong(4);
   ULO rsListHeader = memoryReadLong(execBase + 0x150);
 
-  fellowAddLog("Resource list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", rsListHeader, memoryReadLong(rsListHeader), memoryReadLong(rsListHeader + 4), memoryReadLong(rsListHeader + 8), memoryReadByte(rsListHeader + 9));
+  fellowAddLog("Resource list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", rsListHeader, memoryReadLong(rsListHeader), memoryReadLong(rsListHeader + 4),
+    memoryReadLong(rsListHeader + 8), memoryReadByte(rsListHeader + 9));
+
   if (rsListHeader == memoryReadLong(rsListHeader + 8))
   {
     fellowAddLog("fhfile: Resource list is empty.\n");
@@ -576,32 +678,37 @@ void fhfileDoLogAvailableResources()
   ULO fsNode = memoryReadLong(rsListHeader);
   while (fsNode != 0 && (fsNode != rsListHeader + 4))
   {
-    fellowAddLog("fhfile: ResourceEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4), memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
+    fellowAddLog("fhfile: ResourceEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4),
+      memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), LogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
+
     fsNode = memoryReadLong(fsNode);
   }
 }
 
-void fhfileDoLogAllocMemResult()
+void HardfileHandler::DoLogAllocMemResult()
 {
   fellowAddLog("fhfile: AllocMem() returned %.8X\n", cpuGetDReg(0));
 }
 
-void fhfileDoLogOpenResourceResult()
+void HardfileHandler::DoLogOpenResourceResult()
 {
   fellowAddLog("fhfile: OpenResource() returned %.8X\n", cpuGetDReg(0));
 }
 
 // D0 - pointer to FileSystem.resource
-void fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem()
+void HardfileHandler::DoRemoveRDBFileSystemsAlreadySupportedBySystem()
 {
   fellowAddLog("fhfile: fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem()\n");
 
   ULO fsResource = cpuGetDReg(0);
-
-  fellowAddLog("fhfile: FileSystem.resource list node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s' Creator '%s'\n", fsResource, memoryReadLong(fsResource), memoryReadLong(fsResource + 4), memoryReadByte(fsResource + 8), memoryReadByte(fsResource + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsResource + 10)).c_str(), fhfileLogGetStringFromMemory(memoryReadLong(fsResource + 14)).c_str());
+  fellowAddLog("fhfile: FileSystem.resource list node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s' Creator '%s'\n", fsResource, memoryReadLong(fsResource),
+    memoryReadLong(fsResource + 4), memoryReadByte(fsResource + 8), memoryReadByte(fsResource + 9), LogGetStringFromMemory(memoryReadLong(fsResource + 10)).c_str(),
+    LogGetStringFromMemory(memoryReadLong(fsResource + 14)).c_str());
 
   ULO fsList = fsResource + 18;
-  fellowAddLog("fhfile: FileSystemEntries list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", fsList, memoryReadLong(fsList), memoryReadLong(fsList + 4), memoryReadLong(fsList + 8), memoryReadByte(fsList + 9));
+  fellowAddLog("fhfile: FileSystemEntries list header (%.8X): Head %.8X Tail %.8X TailPred %.8X Type %d\n", fsList, memoryReadLong(fsList), memoryReadLong(fsList + 4),
+    memoryReadLong(fsList + 8), memoryReadByte(fsList + 9));
+
   if (fsList == memoryReadLong(fsList + 8))
   {
     fellowAddLog("fhfile: FileSystemEntry list is empty.\n");
@@ -611,7 +718,8 @@ void fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem()
   ULO fsNode = memoryReadLong(fsList);
   while (fsNode != 0 && (fsNode != fsList + 4))
   {
-    fellowAddLog("fhfile: FileSystemEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4), memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), fhfileLogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
+    fellowAddLog("fhfile: FileSystemEntry Node (%.8X): Succ %.8X Pred %.8X Type %d Pri %d NodeName '%s'\n", fsNode, memoryReadLong(fsNode), memoryReadLong(fsNode + 4),
+      memoryReadByte(fsNode + 8), memoryReadByte(fsNode + 9), LogGetStringFromMemory(memoryReadLong(fsNode + 10)).c_str());
 
     ULO fsEntry = fsNode + 14;
 
@@ -632,7 +740,7 @@ void fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem()
     fellowAddLog("fhfile: FileSystemEntry GlobalVec : %.8X\n\n", memoryReadLong(fsEntry + 44));
     fsNode = memoryReadLong(fsNode);
 
-    fhfileEraseOlderOrSameFileSystemVersion(dosType, version);    
+    EraseOlderOrSameFileSystemVersion(dosType, version);    
   }
 }
 
@@ -645,7 +753,7 @@ void fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem()
 /* RDB filesystem commands by 0x0002XXXX           */
 /*=================================================*/
 
-void fhfileDo(ULO data)
+void HardfileHandler::Do(ULO data)
 {
   ULO type = data >> 16;
   ULO operation = data & 0xffff;
@@ -654,25 +762,25 @@ void fhfileDo(ULO data)
     switch (operation)
     {
       case 1:
-        fhfileDoDiag();
+        DoDiag();
         break;
       case 2:
-        fhfileDoOpen();
+        DoOpen();
         break;
       case 3:
-        fhfileDoClose();
+        DoClose();
         break;
       case 4:
-        fhfileDoExpunge();
+        DoExpunge();
         break;
       case 5:
-        fhfileDoNULL();
+        DoNULL();
         break;
       case 6:
-        fhfileDoBeginIO();
+        DoBeginIO();
         break;
       case 7:
-        fhfileDoAbortIO();
+        DoAbortIO();
         break;
       default:
         break;
@@ -683,162 +791,77 @@ void fhfileDo(ULO data)
     switch (operation)
     {
       case 1:
-        fhfileDoGetRDBFileSystemCount();
+        DoGetRDBFileSystemCount();
         break;
       case 2:
-        fhfileDoGetRDBFileSystemHunkCount();
+        DoGetRDBFileSystemHunkCount();
         break;
       case 3:
-        fhfileDoGetRDBFileSystemHunkSize();
+        DoGetRDBFileSystemHunkSize();
         break;
       case 4:
-        fhfileDoRelocateHunk();
+        DoRelocateHunk();
         break;
       case 5:
-        fhfileDoInitializeRDBFileSystemEntry();
+        DoInitializeRDBFileSystemEntry();
         break;
       case 6:
-        fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem();
+        DoRemoveRDBFileSystemsAlreadySupportedBySystem();
         break;
       case 0xa0:
-        fhfileDoLogAllocMemResult();
+        DoLogAllocMemResult();
         break;
       case 0xa1:
-        fhfileDoLogOpenResourceResult();
+        DoLogOpenResourceResult();
         break;
       case 0xa2:
-        fhfileDoLogAvailableResources();
+        DoLogAvailableResources();
         break;
     }
   }
-}
-
-/*===========================================================================*/
-/* Hardfile card init                                                        */
-/*===========================================================================*/
-
-/*================================================================*/
-/* fhfile_card_init                                               */
-/* We want a configDev struct.  AmigaDOS won't give us one unless */
-/* we pretend to be an expansion card.                            */
-/*================================================================*/
-
-void fhfileCardInit()
-{
-  memoryEmemSet(0, 0xd1);
-  memoryEmemSet(8, 0xc0);
-  memoryEmemSet(4, 2);
-  memoryEmemSet(0x10, 2011>>8);
-  memoryEmemSet(0x14, 2011 & 0xf);
-  memoryEmemSet(0x18, 0);
-  memoryEmemSet(0x1c, 0);
-  memoryEmemSet(0x20, 0);
-  memoryEmemSet(0x24, 1);
-  memoryEmemSet(0x28, 0x10);
-  memoryEmemSet(0x2c, 0);
-  memoryEmemSet(0x40, 0);
-  memoryEmemMirror(0x1000, fhfile_rom + 0x1000, 0xa0);
-}
-
-/*============================================================================*/
-/* Functions to get and set data in the fhfile memory area                    */
-/*============================================================================*/
-
-UBY fhfileReadByte(ULO address)
-{
-  return fhfile_rom[address & 0xffff];
-}
-
-UWO fhfileReadWord(ULO address)
-{
-  UBY *p = fhfile_rom + (address & 0xffff);
-  return (((UWO)p[0]) << 8) | ((UWO)p[1]);
-}
-
-ULO fhfileReadLong(ULO address)
-{
-  UBY *p = fhfile_rom + (address & 0xffff);
-  return (((ULO)p[0]) << 24) | (((ULO)p[1]) << 16) | (((ULO)p[2]) << 8) | ((ULO)p[3]);
-}
-
-void fhfileWriteByte(UBY data, ULO address)
-{
-  // NOP
-}
-
-void fhfileWriteWord(UWO data, ULO address)
-{
-  // NOP
-}
-
-void fhfileWriteLong(ULO data, ULO address)
-{
-  // NOP
-}
-
-/*====================================================*/
-/* fhfile_card_map                                    */
-/* Our rom must be remapped to the location specified */
-/* by Amiga OS                                        */
-/*====================================================*/
-
-void fhfileCardMap(ULO mapping)
-{
-  fhfile_romstart = (mapping<<8) & 0xff0000;
-  ULO bank = fhfile_romstart>>16;
-  memoryBankSet(fhfileReadByte,
-    fhfileReadWord,
-    fhfileReadLong,
-    fhfileWriteByte,
-    fhfileWriteWord,
-    fhfileWriteLong,
-    fhfile_rom,
-    bank,
-    bank,
-    FALSE);
 }
 
 /*=================================================*/
 /* Make a dosdevice packet about the device layout */
 /*=================================================*/
 
-static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr)
+void HardfileHandler::MakeDOSDevPacketForPlainHardfile(ULO devno, ULO unitnameptr, ULO devnameptr)
 {
-  if (fhfile_devs[devno].F)
+  if (_devs[devno].F)
   {
-    memoryDmemSetLong(devno);				     /* Flag to initcode */
+    memoryDmemSetLong(devno);				      /* Flag to initcode */
 
-    memoryDmemSetLong(unitnameptr);			     /*  0 Device driver name "FELLOWX" */
-    memoryDmemSetLong(devnameptr);			     /*  4 Device name "fhfile.device" */
-    memoryDmemSetLong(devno);				     /*  8 Unit # */
-    memoryDmemSetLong(0);				     /* 12 OpenDevice flags */
+    memoryDmemSetLong(unitnameptr);			      /*  0 Device driver name "FELLOWX" */
+    memoryDmemSetLong(devnameptr);			      /*  4 Device name "fhfile.device" */
+    memoryDmemSetLong(devno);				      /*  8 Unit # */
+    memoryDmemSetLong(0);				      /* 12 OpenDevice flags */
 
     // Struct DosEnvec
-    memoryDmemSetLong(16);                                   /* 16 Environment size in long words*/
-    memoryDmemSetLong(fhfile_devs[devno].bytespersector>>2); /* 20 Longwords in a block */
-    memoryDmemSetLong(0);				     /* 24 sector origin (unused) */
-    memoryDmemSetLong(fhfile_devs[devno].surfaces);	     /* 28 Heads */
-    memoryDmemSetLong(1);				     /* 32 Sectors per logical block (unused) */
-    memoryDmemSetLong(fhfile_devs[devno].sectorspertrack);   /* 36 Sectors per track */
-    memoryDmemSetLong(fhfile_devs[devno].reservedblocks);    /* 40 Reserved blocks, min. 1 */
-    memoryDmemSetLong(0);				     /* 44 mdn_prefac - Unused */
-    memoryDmemSetLong(0);				     /* 48 Interleave */
-    if (fhfile_devs[devno].hasRigidDiskBlock)
+    memoryDmemSetLong(16);                                    /* 16 Environment size in long words*/
+    memoryDmemSetLong(_devs[devno].bytespersector>>2);        /* 20 Longwords in a block */
+    memoryDmemSetLong(0);				      /* 24 sector origin (unused) */
+    memoryDmemSetLong(_devs[devno].surfaces);	              /* 28 Heads */
+    memoryDmemSetLong(1);				      /* 32 Sectors per logical block (unused) */
+    memoryDmemSetLong(_devs[devno].sectorspertrack);          /* 36 Sectors per track */
+    memoryDmemSetLong(_devs[devno].reservedblocks);           /* 40 Reserved blocks, min. 1 */
+    memoryDmemSetLong(0);				      /* 44 mdn_prefac - Unused */
+    memoryDmemSetLong(0);				      /* 48 Interleave */
+    if (_devs[devno].hasRigidDiskBlock)
     {
-      memoryDmemSetLong(fhfile_devs[devno].lowCylinder);     /* 52 Lower cylinder */
-      memoryDmemSetLong(fhfile_devs[devno].highCylinder);    /* 56 Upper cylinder */
+      memoryDmemSetLong(_devs[devno].lowCylinder);            /* 52 Lower cylinder */
+      memoryDmemSetLong(_devs[devno].highCylinder);           /* 56 Upper cylinder */
     }
     else
     {
-      memoryDmemSetLong(0);				     /* 52 Lower cylinder */
-      memoryDmemSetLong(fhfile_devs[devno].tracks - 1);	     /* 56 Upper cylinder */
+      memoryDmemSetLong(0);				      /* 52 Lower cylinder */
+      memoryDmemSetLong(_devs[devno].tracks - 1);	      /* 56 Upper cylinder */
     }
-    memoryDmemSetLong(0);				     /* 60 Number of buffers */
-    memoryDmemSetLong(0);				     /* 64 Type of memory for buffers */
-    memoryDmemSetLong(0x7fffffff);			     /* 68 Largest transfer */
-    memoryDmemSetLong(~1U);				     /* 72 Add mask */
-    memoryDmemSetLong(-1);				     /* 76 Boot priority */
-    memoryDmemSetLong(0x444f5300);			     /* 80 DOS file handler name */
+    memoryDmemSetLong(0);				      /* 60 Number of buffers */
+    memoryDmemSetLong(0);				      /* 64 Type of memory for buffers */
+    memoryDmemSetLong(0x7fffffff);			      /* 68 Largest transfer */
+    memoryDmemSetLong(~1U);				      /* 72 Add mask */
+    memoryDmemSetLong(-1);				      /* 76 Boot priority */
+    memoryDmemSetLong(0x444f5300);			      /* 80 DOS file handler name */
     memoryDmemSetLong(0);
   }
   if (devno == (FHFILE_MAX_DEVICES - 1))
@@ -847,20 +870,65 @@ static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr)
   }
 }
 
+//void HardfileHandler::MakeDOSDevPacketForRDBPartition(ULO devno, RDBPartition *partition, ULO devnameptr)
+//{
+//  if (_devs[devno].F)
+//  {
+//    memoryDmemSetLong(devno);				      /* Flag to initcode */
+//
+//    memoryDmemSetLong(unitnameptr);			      /*  0 Device driver name "FELLOWX" */
+//    memoryDmemSetLong(devnameptr);			      /*  4 Device name "fhfile.device" */
+//    memoryDmemSetLong(devno);				      /*  8 Unit # */
+//    memoryDmemSetLong(0);				      /* 12 OpenDevice flags */
+//
+//    // Struct DosEnvec
+//    memoryDmemSetLong(16);                                    /* 16 Environment size in long words*/
+//    memoryDmemSetLong(_devs[devno].bytespersector >> 2);        /* 20 Longwords in a block */
+//    memoryDmemSetLong(0);				      /* 24 sector origin (unused) */
+//    memoryDmemSetLong(_devs[devno].surfaces);	              /* 28 Heads */
+//    memoryDmemSetLong(1);				      /* 32 Sectors per logical block (unused) */
+//    memoryDmemSetLong(_devs[devno].sectorspertrack);          /* 36 Sectors per track */
+//    memoryDmemSetLong(_devs[devno].reservedblocks);           /* 40 Reserved blocks, min. 1 */
+//    memoryDmemSetLong(0);				      /* 44 mdn_prefac - Unused */
+//    memoryDmemSetLong(0);				      /* 48 Interleave */
+//    if (_devs[devno].hasRigidDiskBlock)
+//    {
+//      memoryDmemSetLong(_devs[devno].lowCylinder);            /* 52 Lower cylinder */
+//      memoryDmemSetLong(_devs[devno].highCylinder);           /* 56 Upper cylinder */
+//    }
+//    else
+//    {
+//      memoryDmemSetLong(0);				      /* 52 Lower cylinder */
+//      memoryDmemSetLong(_devs[devno].tracks - 1);	      /* 56 Upper cylinder */
+//    }
+//    memoryDmemSetLong(0);				      /* 60 Number of buffers */
+//    memoryDmemSetLong(0);				      /* 64 Type of memory for buffers */
+//    memoryDmemSetLong(0x7fffffff);			      /* 68 Largest transfer */
+//    memoryDmemSetLong(~1U);				      /* 72 Add mask */
+//    memoryDmemSetLong(-1);				      /* 76 Boot priority */
+//    memoryDmemSetLong(0x444f5300);			      /* 80 DOS file handler name */
+//    memoryDmemSetLong(0);
+//  }
+//  if (devno == (FHFILE_MAX_DEVICES - 1))
+//  {
+//    memoryDmemSetLong(-1);
+//  }
+//}
+
 /*===========================================================*/
 /* fhfileHardReset                                           */
 /* This will set up the device structures and stubs          */
 /* Can be called at every reset, but really only needed once */
 /*===========================================================*/
 
-void fhfileHardReset()
+void HardfileHandler::HardReset()
 {
   ULO unitnames[FHFILE_MAX_DEVICES];
   STR tmpunitname[32];
 
-  fhfile_rdb_filesystems.clear();
+  _rdb_filesystems.clear();
 
-  if (!fhfileHasZeroDevices() && fhfileGetEnabled() && memoryGetKickImageVersion() >= 34)
+  if (!HasZeroDevices() && GetEnabled() && memoryGetKickImageVersion() >= 34)
   {
       memoryDmemSetCounter(0);
 
@@ -969,7 +1037,7 @@ void fhfileHardReset()
 
       /* bootcode */
 
-      fhfile_bootcode = memoryDmemGetCounter();
+      _bootcode = memoryDmemGetCounter();
       memoryDmemSetWord(0x227c); memoryDmemSetLong(doslibname); /* move.l #doslibname,a1 */
       memoryDmemSetLong(0x4eaeffa0);			      /* jsr    -96(a6) ; FindResident() */
       memoryDmemSetWord(0x2040);				      /* move.l d0,a0 */
@@ -1158,7 +1226,7 @@ void fhfileHardReset()
 
       for (int i = 0; i < FHFILE_MAX_DEVICES; i++)
       {
-        fhfileMakeDOSDevPacket(i, unitnames[i], devicename);
+        MakeDOSDevPacketForPlainHardfile(i, unitnames[i], devicename);
       }
 
       /* Init-struct */
@@ -1185,51 +1253,51 @@ void fhfileHardReset()
 
       /* Clear hardfile rom */
 
-      memset(fhfile_rom, 0, 65536);
+      memset(_rom, 0, 65536);
 
       /* Struct DiagArea */
 
-      fhfile_rom[0x1000] = 0x90; /* da_Config */
-      fhfile_rom[0x1001] = 0;    /* da_Flags */
-      fhfile_rom[0x1002] = 0;    /* da_Size */
-      fhfile_rom[0x1003] = 0x96;
-      fhfile_rom[0x1004] = 0;    /* da_DiagPoint */
-      fhfile_rom[0x1005] = 0x80;
-      fhfile_rom[0x1006] = 0;    /* da_BootPoint */
-      fhfile_rom[0x1007] = 0x90;
-      fhfile_rom[0x1008] = 0;    /* da_Name */
-      fhfile_rom[0x1009] = 0;
-      fhfile_rom[0x100a] = 0;    /* da_Reserved01 */
-      fhfile_rom[0x100b] = 0;
-      fhfile_rom[0x100c] = 0;    /* da_Reserved02 */
-      fhfile_rom[0x100d] = 0;
+      _rom[0x1000] = 0x90; /* da_Config */
+      _rom[0x1001] = 0;    /* da_Flags */
+      _rom[0x1002] = 0;    /* da_Size */
+      _rom[0x1003] = 0x96;
+      _rom[0x1004] = 0;    /* da_DiagPoint */
+      _rom[0x1005] = 0x80;
+      _rom[0x1006] = 0;    /* da_BootPoint */
+      _rom[0x1007] = 0x90;
+      _rom[0x1008] = 0;    /* da_Name */
+      _rom[0x1009] = 0;
+      _rom[0x100a] = 0;    /* da_Reserved01 */
+      _rom[0x100b] = 0;
+      _rom[0x100c] = 0;    /* da_Reserved02 */
+      _rom[0x100d] = 0;
 
-      fhfile_rom[0x1080] = 0x23; /* DiagPoint */
-      fhfile_rom[0x1081] = 0xfc; /* move.l #$00010001,$f40000 */
-      fhfile_rom[0x1082] = 0x00;
-      fhfile_rom[0x1083] = 0x01;
-      fhfile_rom[0x1084] = 0x00;
-      fhfile_rom[0x1085] = 0x01;
-      fhfile_rom[0x1086] = 0x00;
-      fhfile_rom[0x1087] = 0xf4;
-      fhfile_rom[0x1088] = 0x00;
-      fhfile_rom[0x1089] = 0x00;
-      fhfile_rom[0x108a] = 0x4e; /* rts */
-      fhfile_rom[0x108b] = 0x75;
+      _rom[0x1080] = 0x23; /* DiagPoint */
+      _rom[0x1081] = 0xfc; /* move.l #$00010001,$f40000 */
+      _rom[0x1082] = 0x00;
+      _rom[0x1083] = 0x01;
+      _rom[0x1084] = 0x00;
+      _rom[0x1085] = 0x01;
+      _rom[0x1086] = 0x00;
+      _rom[0x1087] = 0xf4;
+      _rom[0x1088] = 0x00;
+      _rom[0x1089] = 0x00;
+      _rom[0x108a] = 0x4e; /* rts */
+      _rom[0x108b] = 0x75;
 
-      fhfile_rom[0x1090] = 0x4e; /* BootPoint */
-      fhfile_rom[0x1091] = 0xf9; /* JMP fhfile_bootcode */
-      fhfile_rom[0x1092] = (UBY) (fhfile_bootcode>>24);
-      fhfile_rom[0x1093] = (UBY) (fhfile_bootcode>>16);
-      fhfile_rom[0x1094] = (UBY) (fhfile_bootcode>>8);
-      fhfile_rom[0x1095] = (UBY) fhfile_bootcode;
+      _rom[0x1090] = 0x4e; /* BootPoint */
+      _rom[0x1091] = 0xf9; /* JMP fhfile_bootcode */
+      _rom[0x1092] = static_cast<UBY>(_bootcode>>24);
+      _rom[0x1093] = static_cast<UBY>(_bootcode >> 16);
+      _rom[0x1094] = static_cast<UBY>(_bootcode >> 8);
+      _rom[0x1095] = static_cast<UBY>(_bootcode);
 
       /* NULLIFY pointer to configdev */
 
       memoryDmemSetLongNoCounter(0, 4092);
-      memoryEmemCardAdd(fhfileCardInit, fhfileCardMap);
+      memoryEmemCardAdd(HardfileHandler_CardInit, HardfileHandler_CardMap);
 
-      fhfileAddFileSystemsFromRdb();
+      AddFileSystemsFromRdb();
   }
   else
   {
@@ -1241,27 +1309,27 @@ void fhfileHardReset()
 /* Startup hardfile device */
 /*=========================*/
 
-void fhfileStartup()
+void HardfileHandler::Startup()
 {
   /* Clear first to ensure that F is NULL */
-  memset(fhfile_devs, 0, sizeof(fhfile_dev)*FHFILE_MAX_DEVICES);
-  fhfileClear();
+  memset(_devs, 0, sizeof(fhfile_dev)*FHFILE_MAX_DEVICES);
+  Clear();
 }
 
 /*==========================*/
 /* Shutdown hardfile device */
 /*==========================*/
 
-void fhfileShutdown()
+void HardfileHandler::Shutdown()
 {
-  fhfileClear();
+  Clear();
 }
 
 /*==========================*/
 /* Create hardfile          */
 /*==========================*/
 
-bool fhfileCreate(fhfile_dev hfile)
+bool HardfileHandler::Create(fhfile_dev hfile)
 {
   bool result = false;
 
@@ -1323,4 +1391,12 @@ bool fhfileCreate(fhfile_dev hfile)
   }
   return result;
 #endif
+}
+
+HardfileHandler::HardfileHandler()
+{
+}
+
+HardfileHandler::~HardfileHandler()
+{
 }
