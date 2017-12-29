@@ -94,7 +94,7 @@ bool Code::Read(RawReader& rawReader)
 
 ULO Code::GetSizeInLongwords()
 {
-  return SizeInLongwords;
+  return SizeInLongwords & 0x3fffffff;
 }
 
 UBY* Code::Relocate(ULO baseAddress)
@@ -135,7 +135,7 @@ bool Data::Read(RawReader& rawReader)
 
 ULO Data::GetSizeInLongwords()
 {
-  return SizeInLongwords;
+  return SizeInLongwords & 0x3fffffff;
 }
 
 UBY* Data::Relocate(ULO baseAddress)
@@ -175,7 +175,7 @@ bool BSS::Read(RawReader& rawReader)
 
 ULO BSS::GetSizeInLongwords()
 {
-  return SizeInLongwords;
+  return SizeInLongwords & 0x3fffffff;
 }
 
 UBY* BSS::Relocate(ULO baseAddress)

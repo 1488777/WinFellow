@@ -2,15 +2,22 @@
 
 FILE *I,*O;
 
-void main(void) {
-      int j;
-        I=fopen("d:\\temp\\fhfile.raw","rb");
-        O=fopen("d:\\temp\\out.c","wb");
+void main()
+{
+  int d, count = 0;
+  FILE *I = fopen("C:\\temp\\out13.bin", "rb");
+  FILE *O = fopen("C:\\temp\\out.c", "w");
 
-        for (j=0; j < 198; j += 2) {
-          fprintf(O,"memoryDmemSetByte(0x%.2X); ",fgetc(I));
-          fprintf(O,"memoryDmemSetByte(0x%.2X);\n",fgetc(I));
-	}
-       fclose(O);
-       fclose(I);
+  while ((d = fgetc(I)) != -1)
+  {
+    fprintf(O, "memoryDmemSetByte(0x%.2X); ", d);
+    count++;
+    if ((count % 4) == 0)
+    {
+      fprintf(O, "\n");
+    }
+  }
+  fclose(O);
+  fclose(I);
+  return 0;
 }

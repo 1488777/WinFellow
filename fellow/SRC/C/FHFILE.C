@@ -426,7 +426,7 @@ void fhfileDoGetFileSystemHunkSize()
 {
   ULO fsIndex = cpuGetDReg(1);
   ULO hunkIndex = cpuGetDReg(2);
-  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords();
+  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
   cpuSetDReg(0, hunkSize);
 }
 
@@ -437,7 +437,9 @@ void fhfileDoRelocateHunk()
   ULO hunkIndex = cpuGetDReg(2);
 
   UBY *relocatedHunkData = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
-  memoryWriteLong(0, destination);  // No next segment
+  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+  memoryWriteLong(hunkSize + 8, destination);
+  memoryWriteLong(0, destination + 4);  // No next segment for now
 
   if (relocatedHunkData == nullptr)
   {
@@ -445,11 +447,9 @@ void fhfileDoRelocateHunk()
     return;
   }
 
-  ULO size = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
-
-  for (int i = 0; i < size; i++)
+  for (ULO i = 0; i < hunkSize; i++)
   {
-    memoryWriteByte(relocatedHunkData[i], destination + i + 4);
+    memoryWriteByte(relocatedHunkData[i], destination + i + 8);
   }
   delete relocatedHunkData;
 }
@@ -736,8 +736,10 @@ void fhfileCardMap(ULO mapping) {
 /* Make a dosdevice packet about the device layout */
 /*=================================================*/
 
-static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr){
-  if (fhfile_devs[devno].F) {
+static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr)
+{
+  if (fhfile_devs[devno].F)
+  {
     memoryDmemSetLong(devno);				     /* Flag to initcode */
 
     memoryDmemSetLong(unitnameptr);			     /*  0 Device driver name "FELLOWX" */
@@ -757,8 +759,8 @@ static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr){
     memoryDmemSetLong(0);				     /* 48 Interleave */
     if (fhfile_devs[devno].hasRigidDiskBlock)
     {
-      memoryDmemSetLong(fhfile_devs[devno].lowCylinder);	     /* 52 Lower cylinder */
-      memoryDmemSetLong(fhfile_devs[devno].highCylinder);	     /* 56 Upper cylinder */
+      memoryDmemSetLong(fhfile_devs[devno].lowCylinder);     /* 52 Lower cylinder */
+      memoryDmemSetLong(fhfile_devs[devno].highCylinder);    /* 56 Upper cylinder */
     }
     else
     {
@@ -770,7 +772,7 @@ static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr){
     memoryDmemSetLong(0x7fffffff);			     /* 68 Largest transfer */
     memoryDmemSetLong(~1U);				     /* 72 Add mask */
     memoryDmemSetLong(-1);				     /* 76 Boot priority */
-    memoryDmemSetLong(0x444f5300);			     /* 80 DOS file handler name */
+    memoryDmemSetLong(0x444f5303);			     /* 80 DOS file handler name */
     memoryDmemSetLong(0);
   }
   if (devno == (FHFILE_MAX_DEVICES - 1))
@@ -913,7 +915,177 @@ void fhfileHardReset()
 
       ULO fhfile_t_init = memoryDmemGetCounter();
 
-#include "c:\\temp\\out.c"
+      memoryDmemSetByte(0x48); memoryDmemSetByte(0xE7); memoryDmemSetByte(0xFF); memoryDmemSetByte(0xFE);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0x1E);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x80); memoryDmemSetByte(0x67); memoryDmemSetByte(0x20);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFE);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0xA8);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x80); memoryDmemSetByte(0x66); memoryDmemSetByte(0x0C);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0x62);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0x9C);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x80); memoryDmemSetByte(0x67); memoryDmemSetByte(0x08);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0xE6);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02); memoryDmemSetByte(0x10);
+      memoryDmemSetByte(0x2F); memoryDmemSetByte(0x00); memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x43); memoryDmemSetByte(0xFA);
+      memoryDmemSetByte(0x02); memoryDmemSetByte(0x24); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFE); memoryDmemSetByte(0x68); memoryDmemSetByte(0x28); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x41); memoryDmemSetByte(0xFA); memoryDmemSetByte(0x02); memoryDmemSetByte(0x6E);
+      memoryDmemSetByte(0x2E); memoryDmemSetByte(0x08); memoryDmemSetByte(0x20); memoryDmemSetByte(0x47);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x90); memoryDmemSetByte(0x6B); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x9C); memoryDmemSetByte(0x58); memoryDmemSetByte(0x87);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x3C); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x58); memoryDmemSetByte(0x61); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x01); memoryDmemSetByte(0x0C); memoryDmemSetByte(0x2A); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x47); memoryDmemSetByte(0x70); memoryDmemSetByte(0x54);
+      memoryDmemSetByte(0x2B); memoryDmemSetByte(0xB0); memoryDmemSetByte(0x08); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x08); memoryDmemSetByte(0x00); memoryDmemSetByte(0x59); memoryDmemSetByte(0x80);
+      memoryDmemSetByte(0x64); memoryDmemSetByte(0xF6); memoryDmemSetByte(0xCD); memoryDmemSetByte(0x4C);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x4D); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x70); memoryDmemSetByte(0xCD); memoryDmemSetByte(0x4C);
+      memoryDmemSetByte(0x26); memoryDmemSetByte(0x40); memoryDmemSetByte(0x70); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40); memoryDmemSetByte(0x00); memoryDmemSetByte(0x08);
+      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40); memoryDmemSetByte(0x00); memoryDmemSetByte(0x10);
+      memoryDmemSetByte(0x27); memoryDmemSetByte(0x40); memoryDmemSetByte(0x00); memoryDmemSetByte(0x20);
+      memoryDmemSetByte(0x24); memoryDmemSetByte(0x5F); memoryDmemSetByte(0xB5); memoryDmemSetByte(0xFC);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x67); memoryDmemSetByte(0x18); memoryDmemSetByte(0x20); memoryDmemSetByte(0x2A);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x2A); memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x14); memoryDmemSetByte(0x20); memoryDmemSetByte(0x2A);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x36); memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x20); memoryDmemSetByte(0x20); memoryDmemSetByte(0x2A);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x3A); memoryDmemSetByte(0x27); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x24); memoryDmemSetByte(0x70); memoryDmemSetByte(0x14);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0xBA);
+      memoryDmemSetByte(0x22); memoryDmemSetByte(0x47); memoryDmemSetByte(0x2C); memoryDmemSetByte(0x29);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x22); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x70); memoryDmemSetByte(0x00); memoryDmemSetByte(0x22); memoryDmemSetByte(0x80);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0x40); memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
+      memoryDmemSetByte(0x33); memoryDmemSetByte(0x40); memoryDmemSetByte(0x00); memoryDmemSetByte(0x0E);
+      memoryDmemSetByte(0x33); memoryDmemSetByte(0x7C); memoryDmemSetByte(0x10); memoryDmemSetByte(0xFF);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08); memoryDmemSetByte(0x9D); memoryDmemSetByte(0x69);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08); memoryDmemSetByte(0x23); memoryDmemSetByte(0x79);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4); memoryDmemSetByte(0x0F); memoryDmemSetByte(0xFC);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0A); memoryDmemSetByte(0x23); memoryDmemSetByte(0x4B);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x10); memoryDmemSetByte(0x41); memoryDmemSetByte(0xEC);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x4A); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFE); memoryDmemSetByte(0xF2); memoryDmemSetByte(0x06); memoryDmemSetByte(0x87);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x58);
+      memoryDmemSetByte(0x60); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x60);
+      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78); memoryDmemSetByte(0x00); memoryDmemSetByte(0x04);
+      memoryDmemSetByte(0x22); memoryDmemSetByte(0x4C); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFE); memoryDmemSetByte(0x62); memoryDmemSetByte(0x4C); memoryDmemSetByte(0xDF);
+      memoryDmemSetByte(0x7F); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xA0); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xA1); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xA2); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xA3); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x02); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x03); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0xFC); memoryDmemSetByte(0x00); memoryDmemSetByte(0x02);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x05); memoryDmemSetByte(0x00); memoryDmemSetByte(0xF4);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x48); memoryDmemSetByte(0xE7); memoryDmemSetByte(0x78); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x22); memoryDmemSetByte(0x3C); memoryDmemSetByte(0x00); memoryDmemSetByte(0x01);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x01); memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x3A); memoryDmemSetByte(0x61); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x80); memoryDmemSetByte(0x4C); memoryDmemSetByte(0xDF);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x1E); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x3C); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x20); memoryDmemSetByte(0x61); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xDC); memoryDmemSetByte(0x2A); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x1B); memoryDmemSetByte(0x7C); memoryDmemSetByte(0x00); memoryDmemSetByte(0x08);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08); memoryDmemSetByte(0x41); memoryDmemSetByte(0xFA);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xDA); memoryDmemSetByte(0x2B); memoryDmemSetByte(0x48);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0A); memoryDmemSetByte(0x41); memoryDmemSetByte(0xFA);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0xE6); memoryDmemSetByte(0x2B); memoryDmemSetByte(0x48);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0E); memoryDmemSetByte(0x49); memoryDmemSetByte(0xED);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x12); memoryDmemSetByte(0x28); memoryDmemSetByte(0x8C);
+      memoryDmemSetByte(0x06); memoryDmemSetByte(0x94); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x42); memoryDmemSetByte(0xAC);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x29); memoryDmemSetByte(0x4C);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x08); memoryDmemSetByte(0x22); memoryDmemSetByte(0x4D);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE); memoryDmemSetByte(0xFE); memoryDmemSetByte(0x1A);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75); memoryDmemSetByte(0x2C); memoryDmemSetByte(0x78);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x70); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x43); memoryDmemSetByte(0xFA); memoryDmemSetByte(0x00); memoryDmemSetByte(0xA8);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE); memoryDmemSetByte(0xFE); memoryDmemSetByte(0x0E);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x36);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75); memoryDmemSetByte(0x61); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x60); memoryDmemSetByte(0x28); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x84); memoryDmemSetByte(0x67); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x20); memoryDmemSetByte(0x74); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x5E);
+      memoryDmemSetByte(0x4A); memoryDmemSetByte(0x80); memoryDmemSetByte(0x67); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x0C); memoryDmemSetByte(0x50); memoryDmemSetByte(0x80);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x76);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x5A);
+      memoryDmemSetByte(0x52); memoryDmemSetByte(0x82); memoryDmemSetByte(0xB8); memoryDmemSetByte(0x82);
+      memoryDmemSetByte(0x66); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0xE6);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75); memoryDmemSetByte(0x2F); memoryDmemSetByte(0x08);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0xD0);
+      memoryDmemSetByte(0x2F); memoryDmemSetByte(0x00); memoryDmemSetByte(0x20); memoryDmemSetByte(0x3C);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0xBE);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x56);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFF); memoryDmemSetByte(0x46);
+      memoryDmemSetByte(0x2E); memoryDmemSetByte(0x1F); memoryDmemSetByte(0x22); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x58); memoryDmemSetByte(0x87); memoryDmemSetByte(0xE4); memoryDmemSetByte(0x8F);
+      memoryDmemSetByte(0x23); memoryDmemSetByte(0x47); memoryDmemSetByte(0x00); memoryDmemSetByte(0x36);
+      memoryDmemSetByte(0x4B); memoryDmemSetByte(0xFA); memoryDmemSetByte(0x00); memoryDmemSetByte(0x77);
+      memoryDmemSetByte(0x29); memoryDmemSetByte(0x4D); memoryDmemSetByte(0x00); memoryDmemSetByte(0x0A);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x5F); memoryDmemSetByte(0x2F); memoryDmemSetByte(0x09);
+      memoryDmemSetByte(0x2C); memoryDmemSetByte(0x79); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x04); memoryDmemSetByte(0x41); memoryDmemSetByte(0xE8);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x12); memoryDmemSetByte(0x4E); memoryDmemSetByte(0xAE);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0x10); memoryDmemSetByte(0x20); memoryDmemSetByte(0x1F);
+      memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75); memoryDmemSetByte(0x20); memoryDmemSetByte(0x40);
+      memoryDmemSetByte(0x61); memoryDmemSetByte(0x00); memoryDmemSetByte(0xFE); memoryDmemSetByte(0xE6);
+      memoryDmemSetByte(0x26); memoryDmemSetByte(0x00); memoryDmemSetByte(0x4A); memoryDmemSetByte(0x83);
+      memoryDmemSetByte(0x67); memoryDmemSetByte(0x00); memoryDmemSetByte(0x00); memoryDmemSetByte(0x10);
+      memoryDmemSetByte(0x72); memoryDmemSetByte(0x00); memoryDmemSetByte(0x61); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xAE); memoryDmemSetByte(0x52); memoryDmemSetByte(0x81);
+      memoryDmemSetByte(0xB6); memoryDmemSetByte(0x81); memoryDmemSetByte(0x66); memoryDmemSetByte(0x00);
+      memoryDmemSetByte(0xFF); memoryDmemSetByte(0xF6); memoryDmemSetByte(0x4E); memoryDmemSetByte(0x75);
+      memoryDmemSetByte(0x65); memoryDmemSetByte(0x78); memoryDmemSetByte(0x70); memoryDmemSetByte(0x61);
+      memoryDmemSetByte(0x6E); memoryDmemSetByte(0x73); memoryDmemSetByte(0x69); memoryDmemSetByte(0x6F);
+      memoryDmemSetByte(0x6E); memoryDmemSetByte(0x2E); memoryDmemSetByte(0x6C); memoryDmemSetByte(0x69);
+      memoryDmemSetByte(0x62); memoryDmemSetByte(0x72); memoryDmemSetByte(0x61); memoryDmemSetByte(0x72);
+      memoryDmemSetByte(0x79); memoryDmemSetByte(0x00); memoryDmemSetByte(0x46); memoryDmemSetByte(0x69);
+      memoryDmemSetByte(0x6C); memoryDmemSetByte(0x65); memoryDmemSetByte(0x53); memoryDmemSetByte(0x79);
+      memoryDmemSetByte(0x73); memoryDmemSetByte(0x74); memoryDmemSetByte(0x65); memoryDmemSetByte(0x6D);
+      memoryDmemSetByte(0x2E); memoryDmemSetByte(0x72); memoryDmemSetByte(0x65); memoryDmemSetByte(0x73);
+      memoryDmemSetByte(0x6F); memoryDmemSetByte(0x75); memoryDmemSetByte(0x72); memoryDmemSetByte(0x63);
+      memoryDmemSetByte(0x65); memoryDmemSetByte(0x00); memoryDmemSetByte(0x46); memoryDmemSetByte(0x65);
+      memoryDmemSetByte(0x6C); memoryDmemSetByte(0x6C); memoryDmemSetByte(0x6F); memoryDmemSetByte(0x77);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x68); memoryDmemSetByte(0x61); memoryDmemSetByte(0x72);
+      memoryDmemSetByte(0x64); memoryDmemSetByte(0x66); memoryDmemSetByte(0x69); memoryDmemSetByte(0x6C);
+      memoryDmemSetByte(0x65); memoryDmemSetByte(0x20); memoryDmemSetByte(0x64); memoryDmemSetByte(0x65);
+      memoryDmemSetByte(0x76); memoryDmemSetByte(0x69); memoryDmemSetByte(0x63); memoryDmemSetByte(0x65);
+      memoryDmemSetByte(0x00); memoryDmemSetByte(0x46); memoryDmemSetByte(0x65); memoryDmemSetByte(0x6C);
+      memoryDmemSetByte(0x6C); memoryDmemSetByte(0x6F); memoryDmemSetByte(0x77); memoryDmemSetByte(0x20);
+      memoryDmemSetByte(0x68); memoryDmemSetByte(0x61); memoryDmemSetByte(0x72); memoryDmemSetByte(0x64);
+      memoryDmemSetByte(0x66); memoryDmemSetByte(0x69); memoryDmemSetByte(0x6C); memoryDmemSetByte(0x65);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x52); memoryDmemSetByte(0x44); memoryDmemSetByte(0x42);
+      memoryDmemSetByte(0x20); memoryDmemSetByte(0x66); memoryDmemSetByte(0x73); memoryDmemSetByte(0x00);
 
       /* The mkdosdev packets */
 
