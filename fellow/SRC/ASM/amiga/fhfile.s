@@ -2,31 +2,29 @@ fhfile_init:
 	movem.l	d0-d7/a0-a6, -(a7)
 
 	; -----------------------------------------------------
-	; Check if any hardfiles have filesystems to load
+	; Load filesystems from RDB
 
-	bsr		GetFileSystemCount
-
+	bsr		GetRDBFileSystemCount		; Check if there are RDB filesystems to load
 	tst.l	d0
-	beq.s	EndOfLoadFileSystems
+	beq.s	EndOfLoadRDBFileSystems
 
-	bsr		LogAvailableResources
-	bsr		OpenFileSystemResource
+	bsr		LogAvailableResources	
 
+	bsr		OpenFileSystemResource		; Open FileSystem.resource
 	tst.l	d0
 	bne.s	FileSystemResourceExists
 
-	bsr		CreateFileSystemResource
+	bsr		CreateFileSystemResource	; FileSystem.resource did not exist, create it
 	bsr		OpenFileSystemResource
-
 	tst.l	d0
-	beq.s	EndOfLoadFileSystems	; Still no FileSystem.resource, give up filesystems
+	beq.s	EndOfLoadRDBFileSystems		; Still no FileSystem.resource, give up filesystems
 
 FileSystemResourceExists:
 
-	bsr		LogAvailableResources
-	bsr		AddFileSystemEntries
+	bsr		RemoveRDBFileSystemsAlreadySupportedBySystem
+	bsr		AddRDBFileSystemEntries
 
-EndOfLoadFileSystems:
+EndOfLoadRDBFileSystems:
 
 	; -----------------------------------------------------
 	; Make dos dev packets
@@ -120,12 +118,12 @@ initend:
 
 ;--------------------------------------------------------------------
 LogAllocMemResult:
-	move.l	#$000200a0, $f40000 ; Memory ptr in D0
+	move.l	#$000200a0, $f40000 ; Input D0 Allocated memory ptr
 	rts
 
 ;--------------------------------------------------------------------
 LogOpenResourceResult:
-	move.l	#$000200a1, $f40000	; Resource in D0
+	move.l	#$000200a1, $f40000	; Input D0 Resource pointer
 	rts
 
 ;--------------------------------------------------------------------
@@ -134,33 +132,33 @@ LogAvailableResources:
 	rts
 
 ;--------------------------------------------------------------------
-LogAvailableFileSystems:
-	move.l	#$000200a3, $f40000	; fhfileDoLogAvailableFilesystems(FileSysResource) - Pointer to FileSystem.resource in D0
+GetRDBFileSystemCount:
+	move.l	#$00020001, $f40000	; fhfileDoGetFilesystemCount() - Returns D0 FileSystem count
 	rts
 
 ;--------------------------------------------------------------------
-GetFileSystemCount:
-	move.l	#$00020001, $f40000	; fhfileDoGetFilesystemCount() - Count in D0
+GetRDBFileSystemHunkCount:
+	move.l	#$00020002, $f40000	; Input D1 FileSystem index, Returns D0 Hunk count
 	rts
 
 ;--------------------------------------------------------------------
-GetFileSystemHunkCount:
-	move.l	#$00020002, $f40000	; Input D1 - FileSystem index, Returns hunk count in D0
-	rts
-
-;--------------------------------------------------------------------
-GetFileSystemHunkSize:
-	move.l	#$00020003, $f40000	; Input D1 - FileSystem index, D2 - Hunk index, Returns hunk size in D0
+GetRDBFileSystemHunkSize:
+	move.l	#$00020003, $f40000	; Input D1 FileSystem index, D2 Hunk index, Returns D0 Hunk size
 	rts
 
 ;--------------------------------------------------------------------
 RelocateHunk:
-	move.l	#$00020004, $f40000	; Input D1 - FileSystem index, D2 - Hunk index
+	move.l	#$00020004, $f40000	; Input D1 FileSystem index, D2 Hunk index
 	rts
 
 ;--------------------------------------------------------------------
-InitializeFileSystemEntry:
-	move.l	#$00020005, $f40000	; fhfileDoInitializeFileSystemEntry() - D0 - Pointer to allocated memory
+InitializeRDBFileSystemEntry:
+	move.l	#$00020005, $f40000	; fhfileDoInitializeFileSystemEntry() - Input D0 Pointer to allocated memory
+	rts
+
+;--------------------------------------------------------------------
+RemoveRDBFileSystemsAlreadySupportedBySystem:
+	move.l	#$00020006, $f40000	; fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem() - Input D0 Pointer to FileSystem.resource
 	rts
 
 ;--------------------------------------------------------------------
@@ -209,35 +207,35 @@ OpenFileSystemResource:
 ; Input D1 - filesystem index
 ; Output D0 - first hunk
 RelocateHunks:
-	bsr		GetFileSystemHunkCount
+	bsr		GetRDBFileSystemHunkCount
 	move.l	d0, d4			; Hunk count in D2
 
 	tst.l	d4				; No hunks?
-	beq		endrelocate
+	beq		RelocateEnd
 	moveq.l	#0, d2
 
-relocateloop:
-	bsr		GetFileSystemHunkSize
+RelocateLoop:
+	bsr		GetRDBFileSystemHunkSize
 
 	tst.l	d0				; Is size zero?
-	beq		relocatenext
+	beq		RelocateNext
 
 	addq.l	#8, d0			; Make space for pointer to next segment and hunk size
 	bsr		AllocMem
 	bsr		RelocateHunk
 
-relocatenext:
+RelocateNext:
 	addq.l	#1, d2
 	cmp.l	d2, d4
-	bne		relocateloop
+	bne		RelocateLoop
 
-endrelocate:
+RelocateEnd:
 	rts
 
 ;--------------------------------------------------------------------
 ; Input A0 - FileSystem resource pointer
 ; Output D0 - FileSysEntry pointer
-AddFileSystemEntry:
+AddRDBFileSystemEntry:
 	move.l	a0, -(a7)		; Save FileSystem resource pointer
 	bsr	RelocateHunks
 	move.l	d0, -(a7)		; Save pointer to first hunk
@@ -245,7 +243,7 @@ AddFileSystemEntry:
 	move.l	#190, d0		; Alloc mem for FileSysEntry, is this size correct?
 	bsr		AllocMem		; D0 - Pointer to FileSysEntry
 
-	bsr	InitializeFileSystemEntry
+	bsr		InitializeRDBFileSystemEntry
 
 	move.l	(a7)+, d7		; Restore pointer to first hunk
 	move.l	d0, a1			; FileSysEntry to a1
@@ -268,23 +266,23 @@ AddFileSystemEntry:
 ;--------------------------------------------------------------------
 ; Input D0 - FileSystem resource pointer
 ; Output D0 - FileSysEntry pointer
-AddFileSystemEntries:
+AddRDBFileSystemEntries:
 	move.l	d0, a0
-	bsr		GetFileSystemCount
+	bsr		GetRDBFileSystemCount
 	move.l	d0, d3
 
 	tst.l	d3
-	beq		EndOfAddFileSystemEntries
+	beq		EndOfAddRDBFileSystemEntries
 	moveq.l	#0, d1
 
-AddSystemEntriesLoop:
-	bsr		AddFileSystemEntry
+AddRDBFileSystemEntriesLoop:
+	bsr		AddRDBFileSystemEntry
 
 	addq.l	#1, d1
 	cmp.l	d1, d3
-	bne		AddSystemEntriesLoop
+	bne		AddRDBFileSystemEntriesLoop
 
-EndOfAddFileSystemEntries:
+EndOfAddRDBFileSystemEntries:
 	rts
 
 ;--------------------------------------------------------------------

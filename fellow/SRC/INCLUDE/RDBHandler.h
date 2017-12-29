@@ -34,14 +34,14 @@ struct RDBFilesystemHandler
   void ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize);
 };
 
-struct RDBFilesystemHeader
+struct RDBFileSystemHeader
 {
   ULO SizeInLongs;
   LON CheckSum;
   ULO HostId;
   ULO Next;
   ULO Flags;
-  STR DosType[4];
+  ULO DosType;
   ULO Version;
   ULO PatchFlags;
 
@@ -59,11 +59,12 @@ struct RDBFilesystemHeader
 
   RDBFilesystemHandler FilesystemHandler;
 
-  RDBFilesystemHeader();
-  ~RDBFilesystemHeader();
-
+  bool IsOlderOrSameFileSystemVersion(ULO dosType, ULO version);
   void ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize);
   void Log();
+
+  RDBFileSystemHeader();
+  ~RDBFileSystemHeader();
 };
 
 struct RDBHeader
@@ -103,7 +104,7 @@ struct RDBHeader
   STR ControllerProduct[16];
   STR ControllerRevision[4];
 
-  std::vector<RDBFilesystemHeader*> FilesystemHeaders;
+  std::vector<RDBFileSystemHeader*> FilesystemHeaders;
 
   void ReadFromFile(FILE *F);
   void Log();

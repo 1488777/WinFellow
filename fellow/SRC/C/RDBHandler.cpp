@@ -108,7 +108,7 @@ void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockS
 
 }
 
-void RDBFilesystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize)
+void RDBFileSystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize)
 {
   ULO index = blockSize*blockChainStart;
 
@@ -117,7 +117,7 @@ void RDBFilesystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSi
   HostId = RDBHandler::ReadULOFromFile(F, index + 12);
   Next = RDBHandler::ReadULOFromFile(F, index + 16);
   Flags = RDBHandler::ReadULOFromFile(F, index + 20);
-  RDBHandler::ReadCharsFromFile(F, index + 32, DosType, 4);
+  DosType = RDBHandler::ReadULOFromFile(F, index + 32);
   Version = RDBHandler::ReadULOFromFile(F, index + 36);
   PatchFlags = RDBHandler::ReadULOFromFile(F, index + 40);
 
@@ -140,7 +140,7 @@ void RDBFilesystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSi
   FilesystemHandler.ReadFromFile(F, DnSegListBlock, blockSize);
 }
 
-void RDBFilesystemHeader::Log()
+void RDBFileSystemHeader::Log()
 {
   fellowAddLog("Filesystem header block\n");
   fellowAddLog("-----------------------------------------\n");
@@ -150,7 +150,7 @@ void RDBFilesystemHeader::Log()
   fellowAddLog("12 - host id:                %u\n", HostId);
   fellowAddLog("16 - next:                   %d\n", Next);
   fellowAddLog("20 - flags:                  %X\n", Flags);
-  fellowAddLog("32 - dos type:               %.4s\n", DosType);
+  fellowAddLog("32 - dos type:               %.8X\n", DosType);
   fellowAddLog("36 - version:              0x%X ie %d.%d\n", Version, (Version & 0xffff0000) >> 16, Version & 0xffff);
   fellowAddLog("40 - patch flags:          0x%X\n", PatchFlags);
   fellowAddLog("Device node:-----------------------------\n");
@@ -165,12 +165,18 @@ void RDBFilesystemHeader::Log()
   fellowAddLog("76 - global vec:             %u\n\n", DnGlobalVec);
 }
 
-RDBFilesystemHeader::RDBFilesystemHeader() :
+bool RDBFileSystemHeader::IsOlderOrSameFileSystemVersion(ULO dosType, ULO version)
+{
+  return DosType == dosType && Version <= version;
+}
+
+RDBFileSystemHeader::RDBFileSystemHeader() :
   SizeInLongs(0),
   CheckSum(0),
   HostId(0),
   Next(0),
   Flags(0),
+  DosType(0),
   Version(0),
   PatchFlags(0),
   DnType(0),
@@ -185,7 +191,7 @@ RDBFilesystemHeader::RDBFilesystemHeader() :
 {
 }
 
-RDBFilesystemHeader::~RDBFilesystemHeader()
+RDBFileSystemHeader::~RDBFileSystemHeader()
 {  
 }
 
@@ -259,7 +265,7 @@ void RDBHeader::ReadFromFile(FILE *F)
   ULO nextFilesystemHeader = FilesystemHeaderList;
   while (nextFilesystemHeader != -1)
   {
-    RDBFilesystemHeader *filesystemHeader = new RDBFilesystemHeader();
+    RDBFileSystemHeader *filesystemHeader = new RDBFileSystemHeader();
     filesystemHeader->ReadFromFile(F, nextFilesystemHeader, BlockSize);
     filesystemHeader->Log();
     FilesystemHeaders.push_back(filesystemHeader);

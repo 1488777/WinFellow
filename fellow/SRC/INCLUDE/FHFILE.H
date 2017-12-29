@@ -5,12 +5,14 @@
 
 #define FHFILE_MAX_DEVICES 20
 
-typedef enum {
+typedef enum
+{
   FHFILE_NONE = 0,
   FHFILE_HDF = 1
 } fhfile_status;
 
-typedef struct {
+typedef struct
+{
   STR filename[256]; /* Config settings from here and down */
   BOOLE readonly_original;
   ULO bytespersector_original;
@@ -33,16 +35,14 @@ typedef struct {
 extern void fhfileDo(ULO data);
 
 extern void fhfileSetEnabled(BOOLE enabled);
-extern BOOLE fhfileGetEnabled(void);
+extern BOOLE fhfileGetEnabled();
 extern void fhfileSetHardfile(fhfile_dev hardfile, ULO index);
-extern BOOLE fhfileCompareHardfile(fhfile_dev hardfile, ULO index);
+extern bool fhfileCompareHardfile(fhfile_dev hardfile, ULO index);
 extern BOOLE fhfileRemoveHardfile(ULO index);
-extern BOOLE fhfileCreate(fhfile_dev hfile);
-
-
-extern void fhfileClear(void);
-extern void fhfileHardReset(void);
-extern void fhfileStartup(void);
-extern void fhfileShutdown(void);
+extern bool fhfileCreate(fhfile_dev hfile);
+extern void fhfileClear();
+extern void fhfileHardReset();
+extern void fhfileStartup();
+extern void fhfileShutdown();
 
 #endif
