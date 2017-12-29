@@ -59,7 +59,7 @@
 /*===================================================================*/
 
 fhfile_dev fhfile_devs[FHFILE_MAX_DEVICES];
-std::vector<RDBFileSystemHeader*> fhfile_rdb_filesystems;
+vector<RDBFileSystemHeader*> fhfile_rdb_filesystems;
 ULO fhfile_romstart;
 ULO fhfile_bootcode;
 ULO fhfile_configdev;
@@ -100,9 +100,9 @@ void fhfileAddFileSystemsFromRdb(fhfile_dev *device)
 {
   if (device->F != nullptr && device->rdb != nullptr)
   {
-    for (auto fileSystemHeader : device->rdb->FilesystemHeaders)
+    for (auto fileSystemHeader : device->rdb->FileSystemHeaders)
     {
-      int olderVersionIndex = fhfileFindOlderOrSameFileSystemVersion(fileSystemHeader->DosType, fileSystemHeader->Version);
+      int olderVersionIndex = fhfileFindOlderOrSameFileSystemVersion(fileSystemHeader->DOSType, fileSystemHeader->Version);
       if (olderVersionIndex == -1)
       {
         fhfile_rdb_filesystems.push_back(fileSystemHeader);
@@ -130,7 +130,7 @@ void fhfileEraseOlderOrSameFileSystemVersion(ULO dosType, ULO version)
   int olderOrSameVersionIndex = fhfileFindOlderOrSameFileSystemVersion(dosType, version);
   if (olderOrSameVersionIndex != -1)
   {
-    fellowAddLog("fhfile: Erased RDB filesystem entry (%.8X, %.8X), newer version (%.8X, %.8X) found in RDB or newer/same version supported by Kickstart.\n", fhfile_rdb_filesystems[olderOrSameVersionIndex]->DosType, fhfile_rdb_filesystems[olderOrSameVersionIndex]->Version, dosType, version);
+    fellowAddLog("fhfile: Erased RDB filesystem entry (%.8X, %.8X), newer version (%.8X, %.8X) found in RDB or newer/same version supported by Kickstart.\n", fhfile_rdb_filesystems[olderOrSameVersionIndex]->DOSType, fhfile_rdb_filesystems[olderOrSameVersionIndex]->Version, dosType, version);
     fhfile_rdb_filesystems.erase(fhfile_rdb_filesystems.begin() + olderOrSameVersionIndex);
   }
 }
@@ -166,12 +166,13 @@ void fhfileInitializeHardfile(ULO index)
 
     if (fhfile_devs[index].F != nullptr)                          /* Open file */
     {
-      fhfile_devs[index].hasRigidDiskBlock = RDBHandler::HasRigidDiskBlock(fhfile_devs[index].F);
+      RDBFileReader reader(fhfile_devs[index].F);
+      fhfile_devs[index].hasRigidDiskBlock = RDBHandler::HasRigidDiskBlock(reader);
 
       if (fhfile_devs[index].hasRigidDiskBlock)
       {
         // RDB configured hardfile
-        fhfile_devs[index].rdb = RDBHandler::GetDriveInformation(fhfile_devs[index].F);
+        fhfile_devs[index].rdb = RDBHandler::GetDriveInformation(reader);
         fhfileSetPhysicalGeometryFromRigidDiskBlock(&fhfile_devs[index]);
         fhfile_devs[index].size = size;
         fhfile_devs[index].status = FHFILE_HDF;
@@ -480,7 +481,7 @@ void fhfileDoGetRDBFileSystemCount()
 void fhfileDoGetRDBFileSystemHunkCount()
 {
   ULO fsIndex = cpuGetDReg(1);
-  ULO hunkCount = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks.size();
+  ULO hunkCount = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks.size();
   cpuSetDReg(0, hunkCount);
 }
 
@@ -488,7 +489,7 @@ void fhfileDoGetRDBFileSystemHunkSize()
 {
   ULO fsIndex = cpuGetDReg(1);
   ULO hunkIndex = cpuGetDReg(2);
-  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
   cpuSetDReg(0, hunkSize);
 }
 
@@ -498,8 +499,8 @@ void fhfileDoRelocateHunk()
   ULO fsIndex = cpuGetDReg(1);
   ULO hunkIndex = cpuGetDReg(2);
 
-  UBY *relocatedHunkData = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
-  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FilesystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
+  UBY *relocatedHunkData = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->Relocate(destination + 4);
+  ULO hunkSize = fhfile_rdb_filesystems[fsIndex]->FileSystemHandler.Hunks[hunkIndex]->GetSizeInLongwords() * 4;
   memoryWriteLong(hunkSize + 8, destination);
   memoryWriteLong(0, destination + 4);  // No next segment for now
 
@@ -522,7 +523,7 @@ void fhfileDoInitializeRDBFileSystemEntry()
   ULO fsEntry = cpuGetDReg(0);
   RDBFileSystemHeader *fsHeader = fhfile_rdb_filesystems[index];
 
-  memoryWriteLong(fsHeader->DosType, fsEntry + 14);
+  memoryWriteLong(fsHeader->DOSType, fsEntry + 14);
   memoryWriteLong(fsHeader->Version, fsEntry + 18);
   memoryWriteLong(fsHeader->PatchFlags, fsEntry + 22);
   memoryWriteLong(fsHeader->DnType, fsEntry + 26);
@@ -541,12 +542,12 @@ void fhfileDoInitializeRDBFileSystemEntry()
   }
 }
 
-std::string fhfileLogGetStringFromMemory(ULO address)
+string fhfileLogGetStringFromMemory(ULO address)
 {
-  std::string name;
+  string name;
   if (address == 0)
   {
-    return std::string();
+    return string();
   }
   char c = memoryReadByte(address++);
   while (c != 0)
@@ -837,7 +838,7 @@ static void fhfileMakeDOSDevPacket(ULO devno, ULO unitnameptr, ULO devnameptr)
     memoryDmemSetLong(0x7fffffff);			     /* 68 Largest transfer */
     memoryDmemSetLong(~1U);				     /* 72 Add mask */
     memoryDmemSetLong(-1);				     /* 76 Boot priority */
-    memoryDmemSetLong(0x444f5303);			     /* 80 DOS file handler name */
+    memoryDmemSetLong(0x444f5300);			     /* 80 DOS file handler name */
     memoryDmemSetLong(0);
   }
   if (devno == (FHFILE_MAX_DEVICES - 1))

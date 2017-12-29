@@ -227,12 +227,12 @@ ULO RawReader::GetNextByteswappedLong()
   return value;
 }
 
-std::string RawReader::GetNextString(ULO lengthInLongwords)
+string RawReader::GetNextString(ULO lengthInLongwords)
 {
-  std::string::size_type offset = _address;
-  std::string::size_type length = lengthInLongwords * 4;
+  string::size_type offset = _address;
+  string::size_type length = lengthInLongwords * 4;
   _address += length;
-  return std::string(reinterpret_cast<char*>(_rawData), offset, length);
+  return string(reinterpret_cast<char*>(_rawData), offset, length);
 }
 
 UBY *RawReader::GetNextBytes(ULO lengthInLongwords)
@@ -271,7 +271,7 @@ Header* HunkParser::ReadHeader(RawReader& rawReader)
   return header;  
 }
 
-bool HunkParser::Parse(std::vector<HunkPtr>& hunks)
+bool HunkParser::Parse(vector<HunkPtr>& hunks)
 {
   RawReader rawReader(_rawData);
 

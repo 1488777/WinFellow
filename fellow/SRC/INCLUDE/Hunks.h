@@ -6,6 +6,8 @@
 #include <string>
 #include <memory>
 
+using namespace std;
+
 //---------------------------------------------------------------------------
 
 class RawReader
@@ -17,7 +19,7 @@ private:
 
 public:
   ULO GetNextByteswappedLong();
-  std::string GetNextString(ULO lengthInLongwords);
+  string GetNextString(ULO lengthInLongwords);
   UBY *GetNextBytes(ULO lengthInLongwords);
 
   RawReader(UBY *rawReader);
@@ -52,8 +54,8 @@ typedef std::unique_ptr<Hunk> HunkPtr;
 class Header : public Hunk
 {
 public:
-  std::vector<std::string> ResidentLibraries;
-  std::vector<HunkSize> HunkSizes;
+  vector<string> ResidentLibraries;
+  vector<HunkSize> HunkSizes;
 
   bool Read(RawReader& rawReader) override;
 
@@ -129,7 +131,7 @@ private:
   Header* ReadHeader(RawReader& rawReader);
 
 public:
-  bool Parse(std::vector<HunkPtr>& hunks);
+  bool Parse(vector<HunkPtr>& hunks);
 
   HunkParser(UBY *rawData);
 };

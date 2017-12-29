@@ -3,14 +3,32 @@
 
 #include "DEFS.H"
 #include "Hunks.h"
+#include <string>
 #include <vector>
+
+using namespace std;
+
+class RDBFileReader
+{
+private:
+  FILE *_F;
+
+public:
+  string ReadString(off_t offset, size_t maxCount);
+  UBY ReadUBY(off_t offset);
+  ULO ReadULO(off_t offset);
+  LON ReadLON(off_t offset);
+  UBY *ReadData(off_t offset, size_t byteCount);
+
+  RDBFileReader(FILE *F);
+};
 
 struct RDBLSegBlock
 {
-  STR Id[4];
+  string ID;
   LON SizeInLongs;
   LON CheckSum;
-  LON HostId;
+  LON HostID;
   LON Next;
   UBY *Data;
 
@@ -18,30 +36,30 @@ struct RDBLSegBlock
   ~RDBLSegBlock();
 
   LON GetDataSize();
-  void ReadFromFile(FILE *F, ULO index);
+  void ReadFromFile(RDBFileReader& reader, ULO index);
   void Log();
 };
 
-struct RDBFilesystemHandler
+struct RDBFileSystemHandler
 {
   ULO Size;
   UBY *RawData;
-  std::vector<HunkPtr> Hunks;
+  vector<HunkPtr> Hunks;
 
-  RDBFilesystemHandler();
-  ~RDBFilesystemHandler();
+  RDBFileSystemHandler();
+  ~RDBFileSystemHandler();
 
-  void ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize);
+  bool ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize);
 };
 
 struct RDBFileSystemHeader
 {
   ULO SizeInLongs;
   LON CheckSum;
-  ULO HostId;
+  ULO HostID;
   ULO Next;
   ULO Flags;
-  ULO DosType;
+  ULO DOSType;
   ULO Version;
   ULO PatchFlags;
 
@@ -57,22 +75,62 @@ struct RDBFileSystemHeader
   ULO DnGlobalVec;
   ULO Reserved2[23];
 
-  RDBFilesystemHandler FilesystemHandler;
+  RDBFileSystemHandler FileSystemHandler;
 
-  bool IsOlderOrSameFileSystemVersion(ULO dosType, ULO version);
-  void ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize);
+  bool IsOlderOrSameFileSystemVersion(ULO DOSType, ULO version);
+  void ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize);
   void Log();
 
   RDBFileSystemHeader();
   ~RDBFileSystemHeader();
 };
 
+struct RDBPartition
+{
+  string ID;
+  ULO SizeInLongs;
+  ULO CheckSum;
+  ULO HostID;
+  ULO Next;
+  ULO Flags;
+  ULO BadBlockList;
+  ULO DevFlags;
+  char DriveNameLength;
+  string DriveName;
+
+  // DOS Environment Vector
+  ULO SizeOfVector;
+  ULO SizeBlock;
+  ULO SecOrg;
+  ULO Surfaces;
+  ULO SectorsPerBlock;
+  ULO BlocksPerTrack;
+  ULO Reserved;
+  ULO PreAlloc;
+  ULO Interleave;
+
+  ULO LowCylinder;
+  ULO HighCylinder;
+  ULO NumBuffer;
+  ULO BufMemType;
+  ULO MaxTransfer;
+  ULO Mask;
+  ULO BootPri;
+  ULO DOSType;
+  ULO Baud;
+  ULO Control;
+  ULO Bootblocks;
+
+  void ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize);
+  void Log();
+};
+
 struct RDBHeader
 {
-  STR Id[4];
+  string ID;
   ULO SizeInLongs;
   LON CheckSum;
-  ULO HostId;
+  ULO HostID;
   ULO BlockSize;
   ULO Flags;
   ULO BadBlockList;
@@ -89,37 +147,33 @@ struct RDBHeader
   ULO ReducedWrite;
   ULO StepRate;
 
-  ULO RdbBlockLow;
-  ULO RdbBlockHigh;
+  ULO RDBBlockLow;
+  ULO RDBBlockHigh;
   ULO LowCylinder;
   ULO HighCylinder;
   ULO CylinderBlocks;
   ULO AutoParkSeconds;
   ULO HighRDSKBlock;
 
-  STR DiskVendor[8];
-  STR DiskProduct[16];
-  STR DiskRevision[4];
-  STR ControllerVendor[8];
-  STR ControllerProduct[16];
-  STR ControllerRevision[4];
+  string DiskVendor;
+  string DiskProduct;
+  string DiskRevision;
+  string ControllerVendor;
+  string ControllerProduct;
+  string ControllerRevision;
 
-  std::vector<RDBFileSystemHeader*> FilesystemHeaders;
+  vector<RDBPartition *> Partitions;
+  vector<RDBFileSystemHeader*> FileSystemHeaders;
 
-  void ReadFromFile(FILE *F);
+  void ReadFromFile(RDBFileReader& reader);
   void Log();
 };
 
 class RDBHandler
 {
-
 public:
-  static void ReadCharsFromFile(FILE *F, off_t offset, STR* destination, size_t count);
-  static ULO ReadULOFromFile(FILE *F, off_t offset);
-  static LON ReadLONFromFile(FILE *F, off_t offset);
-
-  static bool HasRigidDiskBlock(FILE *F);
-  static RDBHeader* GetDriveInformation(FILE *F);
+  static bool HasRigidDiskBlock(RDBFileReader& reader);
+  static RDBHeader* GetDriveInformation(RDBFileReader& reader);
 };
 
 #endif

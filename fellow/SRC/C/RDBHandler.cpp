@@ -2,21 +2,63 @@
 #include "FELLOW.H"
 #include "RDBHandler.h"
 
-RDBLSegBlock::RDBLSegBlock()
-  : SizeInLongs(0),
+string RDBFileReader::ReadString(off_t offset, size_t maxCount)
+{
+  int c;
+  string s;
+  fseek(_F, offset, SEEK_SET);
+  while (maxCount-- != 0 && (c = fgetc(_F)) != -1)
+  {
+    s.push_back(c);
+  }
+  return s;
+}
+
+UBY RDBFileReader::ReadUBY(off_t offset)
+{
+  fseek(_F, offset, SEEK_SET);
+  return static_cast<UBY>(fgetc(_F));
+}
+
+ULO RDBFileReader::ReadULO(off_t offset)
+{
+  UBY value[4];
+  fseek(_F, offset, SEEK_SET);
+  fread(&value, 1, 4, _F);
+  return static_cast<ULO>(value[0]) << 24 | static_cast<ULO>(value[1]) << 16 | static_cast<ULO>(value[2]) << 8 | static_cast<ULO>(value[3]);
+}
+
+LON RDBFileReader::ReadLON(off_t offset)
+{
+  return static_cast<LON>(ReadULO(offset));
+}
+
+UBY *RDBFileReader::ReadData(off_t offset, size_t byteCount)
+{
+  UBY *data = new UBY[byteCount];
+  fread(data, 1, byteCount, _F);
+  return data;
+}
+
+RDBFileReader::RDBFileReader(FILE *F)
+  : _F(F)
+{
+}
+
+RDBLSegBlock::RDBLSegBlock() : 
+  SizeInLongs(0),
   CheckSum(0),
-  HostId(0),
+  HostID(0),
   Next(-1),
   Data(nullptr)
 {
-  Id[0] = Id[1] = Id[2] = Id[3] = 0;
 }
 
 RDBLSegBlock::~RDBLSegBlock()
 {
   if (Data != nullptr)
   {
-    delete[] Data;
+    delete Data;
   }
 }
 
@@ -25,36 +67,34 @@ LON RDBLSegBlock::GetDataSize()
   return 4 * (SizeInLongs - 5);
 }
 
-void RDBLSegBlock::ReadFromFile(FILE *F, ULO index)
+void RDBLSegBlock::ReadFromFile(RDBFileReader& reader, ULO index)
 {
-  RDBHandler::ReadCharsFromFile(F, index + 0, Id, 4);
-  SizeInLongs = RDBHandler::ReadLONFromFile(F, index + 4);
-  CheckSum = RDBHandler::ReadLONFromFile(F, index + 8);
-  HostId = RDBHandler::ReadLONFromFile(F, index + 12);
-  Next = RDBHandler::ReadLONFromFile(F, index + 16);
-  LON dataSize = GetDataSize();
-  Data = new UBY[dataSize];
-  fread(Data, 1, dataSize, F);
+  ID = reader.ReadString(index, 4);
+  SizeInLongs = reader.ReadLON(index + 4);
+  CheckSum = reader.ReadLON(index + 8);
+  HostID = reader.ReadLON(index + 12);
+  Next = reader.ReadLON(index + 16);
+  Data = reader.ReadData(index + 20, GetDataSize());
 }
 
 void RDBLSegBlock::Log()
 {
   fellowAddLog("LSegBlock\n");
   fellowAddLog("-----------------------------------------\n");
-  fellowAddLog("0   - id:                     %c%c%c%c\n", Id[0], Id[1], Id[2], Id[3]);
+  fellowAddLog("0   - id:                     %.4s\n", ID.c_str());
   fellowAddLog("4   - size in longs:          %d\n", SizeInLongs);
-  fellowAddLog("8   - checksum:               %d\n", CheckSum);
-  fellowAddLog("12  - host id:                %d\n", HostId);
+  fellowAddLog("8   - checksum:               %.8X\n", CheckSum);
+  fellowAddLog("12  - host id:                %d\n", HostID);
   fellowAddLog("16  - next:                   %d\n\n", Next);
 }
 
-RDBFilesystemHandler::RDBFilesystemHandler()
+RDBFileSystemHandler::RDBFileSystemHandler()
   : Size(0),
     RawData(nullptr)
 {
 }
 
-RDBFilesystemHandler::~RDBFilesystemHandler()
+RDBFileSystemHandler::~RDBFileSystemHandler()
 {
   if (RawData != nullptr)
   {
@@ -62,11 +102,9 @@ RDBFilesystemHandler::~RDBFilesystemHandler()
   }
 }
 
-
-#include "fileops.h"
-void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize)
+bool RDBFileSystemHandler::ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize)
 {
-  std::vector<RDBLSegBlock*> blocks;
+  vector<RDBLSegBlock*> blocks;
   LON nextBlock = blockChainStart;
 
   fellowAddLog("Reading filesystem handler from block-chain at %d\n", blockChainStart);
@@ -76,7 +114,7 @@ void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockS
   {
     LON index = nextBlock*blockSize;
     RDBLSegBlock *block = new RDBLSegBlock();
-    block->ReadFromFile(F, index);
+    block->ReadFromFile(reader, index);
     block->Log();
     blocks.push_back(block);
     Size += block->GetDataSize();
@@ -98,46 +136,40 @@ void RDBFilesystemHandler::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockS
   blocks.clear();
 
   HunkParser hunkParser(RawData);
-  bool result = hunkParser.Parse(Hunks);
-
-  STR fname[256];
-  fileopsGetGenericFileName(fname, "WinFellow", "filesystem.bin");
-  FILE *W = fopen(fname, "wb");
-  fwrite(RawData, 1, Size, W);
-  fclose(W);
-
+  return hunkParser.Parse(Hunks);
 }
 
-void RDBFileSystemHeader::ReadFromFile(FILE *F, ULO blockChainStart, ULO blockSize)
+void RDBFileSystemHeader::ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize)
 {
   ULO index = blockSize*blockChainStart;
 
-  SizeInLongs = RDBHandler::ReadULOFromFile(F, index + 4);
-  CheckSum = RDBHandler::ReadLONFromFile(F, index + 8);
-  HostId = RDBHandler::ReadULOFromFile(F, index + 12);
-  Next = RDBHandler::ReadULOFromFile(F, index + 16);
-  Flags = RDBHandler::ReadULOFromFile(F, index + 20);
-  DosType = RDBHandler::ReadULOFromFile(F, index + 32);
-  Version = RDBHandler::ReadULOFromFile(F, index + 36);
-  PatchFlags = RDBHandler::ReadULOFromFile(F, index + 40);
+  SizeInLongs = reader.ReadULO(index + 4);
+  CheckSum = reader.ReadLON(index + 8);
+  HostID = reader.ReadULO(index + 12);
+  Next = reader.ReadULO(index + 16);
+  Flags = reader.ReadULO(index + 20);
+  DOSType = reader.ReadULO(index + 32);
+  Version = reader.ReadULO(index + 36);
+  PatchFlags = reader.ReadULO(index + 40);
 
   // Device node
-  DnType = RDBHandler::ReadULOFromFile(F, index + 44);
-  DnTask = RDBHandler::ReadULOFromFile(F, index + 48);
-  DnLock = RDBHandler::ReadULOFromFile(F, index + 52);
-  DnHandler = RDBHandler::ReadULOFromFile(F, index + 56);
-  DnStackSize = RDBHandler::ReadULOFromFile(F, index + 60);
-  DnPriority = RDBHandler::ReadULOFromFile(F, index + 64);
-  DnStartup = RDBHandler::ReadULOFromFile(F, index + 68);
-  DnSegListBlock = RDBHandler::ReadULOFromFile(F, index + 72);
-  DnGlobalVec = RDBHandler::ReadULOFromFile(F, index + 76);
+  DnType = reader.ReadULO(index + 44);
+  DnTask = reader.ReadULO(index + 48);
+  DnLock = reader.ReadULO(index + 52);
+  DnHandler = reader.ReadULO(index + 56);
+  DnStackSize = reader.ReadULO(index + 60);
+  DnPriority = reader.ReadULO(index + 64);
+  DnStartup = reader.ReadULO(index + 68);
+  DnSegListBlock = reader.ReadULO(index + 72);
+  DnGlobalVec = reader.ReadULO(index + 76);
 
+  // Reserved for additional patchflags
   for (int i = 0; i < 23; i++)
   {
-    Reserved2[i] = RDBHandler::ReadULOFromFile(F, index + i + 80);
+    Reserved2[i] = reader.ReadULO(index + i + 80);
   }
 
-  FilesystemHandler.ReadFromFile(F, DnSegListBlock, blockSize);
+  FileSystemHandler.ReadFromFile(reader, DnSegListBlock, blockSize);
 }
 
 void RDBFileSystemHeader::Log()
@@ -147,14 +179,15 @@ void RDBFileSystemHeader::Log()
   fellowAddLog("0  - id:                     FSHD\n");
   fellowAddLog("4  - size in longs:          %u\n", SizeInLongs);
   fellowAddLog("8  - checksum:               %d\n", CheckSum);
-  fellowAddLog("12 - host id:                %u\n", HostId);
+  fellowAddLog("12 - host id:                %u\n", HostID);
   fellowAddLog("16 - next:                   %d\n", Next);
   fellowAddLog("20 - flags:                  %X\n", Flags);
-  fellowAddLog("32 - dos type:               %.8X\n", DosType);
-  fellowAddLog("36 - version:              0x%X ie %d.%d\n", Version, (Version & 0xffff0000) >> 16, Version & 0xffff);
-  fellowAddLog("40 - patch flags:          0x%X\n", PatchFlags);
+  fellowAddLog("32 - dos type:               %.8X\n", DOSType);
+  fellowAddLog("36 - version:                %.8X ie %d.%d\n", Version, (Version & 0xffff0000) >> 16, Version & 0xffff);
+  fellowAddLog("40 - patch flags:            %.8X\n", PatchFlags);
   fellowAddLog("Device node:-----------------------------\n");
   fellowAddLog("44 - type:                   %u\n", DnType);
+  fellowAddLog("48 - task:                   %u\n", DnTask);
   fellowAddLog("48 - task:                   %u\n", DnTask);
   fellowAddLog("52 - lock:                   %u\n", DnLock);
   fellowAddLog("56 - handler:                %u\n", DnHandler);
@@ -162,21 +195,21 @@ void RDBFileSystemHeader::Log()
   fellowAddLog("64 - priority:               %u\n", DnPriority);
   fellowAddLog("68 - startup:                %u\n", DnStartup);
   fellowAddLog("72 - seg list block:         %u\n", DnSegListBlock);
-  fellowAddLog("76 - global vec:             %u\n\n", DnGlobalVec);
+  fellowAddLog("76 - global vec:             %d\n\n", DnGlobalVec);
 }
 
 bool RDBFileSystemHeader::IsOlderOrSameFileSystemVersion(ULO dosType, ULO version)
 {
-  return DosType == dosType && Version <= version;
+  return DOSType == dosType && Version <= version;
 }
 
 RDBFileSystemHeader::RDBFileSystemHeader() :
   SizeInLongs(0),
   CheckSum(0),
-  HostId(0),
+  HostID(0),
   Next(0),
   Flags(0),
-  DosType(0),
+  DOSType(0),
   Version(0),
   PatchFlags(0),
   DnType(0),
@@ -195,81 +228,142 @@ RDBFileSystemHeader::~RDBFileSystemHeader()
 {  
 }
 
+void RDBPartition::ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize)
+{  
+  ULO index = blockSize*blockChainStart;
 
-void RDBHandler::ReadCharsFromFile(FILE *F, off_t offset, STR* destination, size_t count)
-{
-  fseek(F, offset, SEEK_SET);
-  fread(destination, 1, count, F);
+  ID = reader.ReadString(index, 4);
+  SizeInLongs = reader.ReadULO(index + 4);
+  CheckSum = reader.ReadLON(index + 8);
+  HostID = reader.ReadULO(index + 12);
+  Next = reader.ReadULO(index + 16);
+  Flags = reader.ReadULO(index + 20);
+  DevFlags = reader.ReadULO(index + 32);
+  DriveNameLength = reader.ReadUBY(index + 36);
+  DriveName = reader.ReadString(index + 37, DriveNameLength);
+
+  // DOS Environment vector
+  SizeOfVector = reader.ReadULO(index + 128);
+  SizeBlock = reader.ReadULO(index + 132);
+  SecOrg = reader.ReadULO(index + 136);
+  Surfaces = reader.ReadULO(index + 140);
+  SectorsPerBlock = reader.ReadULO(index + 144);
+  BlocksPerTrack = reader.ReadULO(index + 148);
+  Reserved = reader.ReadULO(index + 152);
+  PreAlloc = reader.ReadULO(index + 156);
+  Interleave = reader.ReadULO(index + 160);
+  LowCylinder = reader.ReadULO(index + 164);
+  HighCylinder = reader.ReadULO(index + 168);
+  NumBuffer = reader.ReadULO(index + 172);
+  BufMemType = reader.ReadULO(index + 176);
+  MaxTransfer = reader.ReadULO(index + 180);
+  Mask = reader.ReadULO(index + 184);
+  BootPri = reader.ReadULO(index + 188);
+  DOSType = reader.ReadULO(index + 192);
+  Baud = reader.ReadULO(index + 196);
+  Control = reader.ReadULO(index + 200);
+  Bootblocks = reader.ReadULO(index + 204);
 }
 
-ULO RDBHandler::ReadULOFromFile(FILE *F, off_t offset)
+void RDBPartition::Log()
 {
-  UBY value[4];
-  fseek(F, offset, SEEK_SET);
-  fread(&value, 1, 4, F);
-  return static_cast<ULO>(value[0]) << 24 | static_cast<ULO>(value[1]) << 16 | static_cast<ULO>(value[2]) << 8 | static_cast<ULO>(value[3]);
+  fellowAddLog("RDB Partition\n");
+  fellowAddLog("----------------------------------------------------\n");
+  fellowAddLog("0   - id:                       %s (Should be PART)\n", ID.c_str());
+  fellowAddLog("4   - size in longs:            %u (Should be 64)\n", SizeInLongs);
+  fellowAddLog("8   - checksum:                 %.8X\n", CheckSum);
+  fellowAddLog("12  - host id:                  %u\n", HostID);
+  fellowAddLog("16  - next block:               %d\n", Next);
+  fellowAddLog("20  - flags:                    %X (%s, %s)\n", Flags, Flags & 1 ? "Bootable" : "Not bootable", Flags & 2 ? "No automount" : "Automount");
+  fellowAddLog("32  - DevFlags:                 %X\n", DevFlags);
+  fellowAddLog("36  - DriveNameLength:          %d\n", DriveNameLength);
+  fellowAddLog("37  - DriveName:                %s\n", DriveName.c_str());
+  fellowAddLog("Partition DOS Environment vector:-------------------\n");
+  fellowAddLog("128 - size of vector (in longs):%u (=%d bytes)\n", SizeOfVector, SizeOfVector*4);
+  fellowAddLog("132 - SizeBlock (in longs):     %u (=%d bytes)\n", SizeBlock, SizeBlock*4);
+  fellowAddLog("136 - SecOrg:                   %u (Should be 0)\n", SecOrg);
+  fellowAddLog("140 - Surfaces:                 %u\n", Surfaces);
+  fellowAddLog("144 - Sectors per block:        %u\n", SectorsPerBlock);
+  fellowAddLog("148 - Blocks per track:         %u\n", BlocksPerTrack);
+  fellowAddLog("152 - Reserved (blocks):        %u\n", Reserved);
+  fellowAddLog("156 - Pre Alloc:                %u\n", PreAlloc);
+  fellowAddLog("160 - Interleave:               %u\n", Interleave);
+  fellowAddLog("164 - low cylinder:             %u\n", LowCylinder);
+  fellowAddLog("168 - high cylinder:            %u\n", HighCylinder);
+  fellowAddLog("172 - num buffer:               %u\n", NumBuffer);
+  fellowAddLog("176 - BufMemType:               %u\n", BufMemType);
+  fellowAddLog("180 - MaxTransfer:              %u\n", MaxTransfer);
+  fellowAddLog("184 - Mask:                     %X\n", Mask);
+  fellowAddLog("188 - BootPri:                  %u\n", BootPri);
+  fellowAddLog("192 - DosType:                  %u\n", DOSType);
+  fellowAddLog("196 - Baud:                     %u\n", Baud);
+  fellowAddLog("200 - Control:                  %u\n", Control);
+  fellowAddLog("204 - Bootblocks:               %u\n", Bootblocks);
 }
 
-LON RDBHandler::ReadLONFromFile(FILE *F, off_t offset)
+bool RDBHandler::HasRigidDiskBlock(RDBFileReader& reader)
 {
-  return static_cast<LON>(ReadULOFromFile(F, offset));
+  string headerID = reader.ReadString(0, 4);
+  return headerID == "RDSK";
 }
 
-bool RDBHandler::HasRigidDiskBlock(FILE *F)
+void RDBHeader::ReadFromFile(RDBFileReader& reader)
 {
-  STR header[5];
-  ReadCharsFromFile(F, 0, header, 4);
-  header[4] = '\0';
-  return strcmp(header, "RDSK") == 0;
-}
-
-void RDBHeader::ReadFromFile(FILE *F)
-{
-  RDBHandler::ReadCharsFromFile(F, 0, Id, 4);
-  SizeInLongs = RDBHandler::ReadULOFromFile(F, 4);
-  CheckSum = RDBHandler::ReadLONFromFile(F, 8);
-  HostId = RDBHandler::ReadULOFromFile(F, 12);
-  BlockSize = RDBHandler::ReadULOFromFile(F, 16);
-  Flags = RDBHandler::ReadULOFromFile(F, 20);
-  BadBlockList = RDBHandler::ReadULOFromFile(F, 24);
-  PartitionList = RDBHandler::ReadULOFromFile(F, 28);
-  FilesystemHeaderList = RDBHandler::ReadULOFromFile(F, 32);
-  DriveInitCode = RDBHandler::ReadULOFromFile(F, 36);
+  ID = reader.ReadString(0, 4);
+  SizeInLongs = reader.ReadULO(4);
+  CheckSum = reader.ReadLON(8);
+  HostID = reader.ReadULO(12);
+  BlockSize = reader.ReadULO(16);
+  Flags = reader.ReadULO(20);
+  BadBlockList = reader.ReadULO(24);
+  PartitionList = reader.ReadULO(28);
+  FilesystemHeaderList = reader.ReadULO(32);
+  DriveInitCode = reader.ReadULO(36);
 
   // Physical drive characteristics
-  Cylinders = RDBHandler::ReadULOFromFile(F, 64);
-  SectorsPerTrack = RDBHandler::ReadULOFromFile(F, 68);
-  Heads = RDBHandler::ReadULOFromFile(F, 72);
-  Interleave = RDBHandler::ReadULOFromFile(F, 76);
-  ParkingZone = RDBHandler::ReadULOFromFile(F, 80);
-  WritePreComp = RDBHandler::ReadULOFromFile(F, 96);
-  ReducedWrite = RDBHandler::ReadULOFromFile(F, 100);
-  StepRate = RDBHandler::ReadULOFromFile(F, 104);
+  Cylinders = reader.ReadULO(64);
+  SectorsPerTrack = reader.ReadULO(68);
+  Heads = reader.ReadULO(72);
+  Interleave = reader.ReadULO(76);
+  ParkingZone = reader.ReadULO(80);
+  WritePreComp = reader.ReadULO(96);
+  ReducedWrite = reader.ReadULO(100);
+  StepRate = reader.ReadULO(104);
 
   // Logical drive characteristics
-  RdbBlockLow = RDBHandler::ReadULOFromFile(F, 128);
-  RdbBlockHigh = RDBHandler::ReadULOFromFile(F, 132);
-  LowCylinder = RDBHandler::ReadULOFromFile(F, 136);
-  HighCylinder = RDBHandler::ReadULOFromFile(F, 140);
-  CylinderBlocks = RDBHandler::ReadULOFromFile(F, 144);
-  AutoParkSeconds = RDBHandler::ReadULOFromFile(F, 148);
-  HighRDSKBlock = RDBHandler::ReadULOFromFile(F, 152);
+  RDBBlockLow = reader.ReadULO(128);
+  RDBBlockHigh = reader.ReadULO(132);
+  LowCylinder = reader.ReadULO(136);
+  HighCylinder = reader.ReadULO(140);
+  CylinderBlocks = reader.ReadULO(144);
+  AutoParkSeconds = reader.ReadULO(148);
+  HighRDSKBlock = reader.ReadULO(152);
 
-  RDBHandler::ReadCharsFromFile(F, 160, DiskVendor, 8);
-  RDBHandler::ReadCharsFromFile(F, 168, DiskProduct, 16);
-  RDBHandler::ReadCharsFromFile(F, 184, DiskRevision, 4);
-  RDBHandler::ReadCharsFromFile(F, 188, ControllerVendor, 8);
-  RDBHandler::ReadCharsFromFile(F, 196, ControllerProduct, 16);
-  RDBHandler::ReadCharsFromFile(F, 212, ControllerRevision, 4);
+  DiskVendor = reader.ReadString(160, 8);
+  DiskProduct = reader.ReadString(168, 16);
+  DiskRevision = reader.ReadString(184, 4);
+  ControllerVendor = reader.ReadString(188, 8);
+  ControllerProduct = reader.ReadString(196, 16);
+  ControllerRevision = reader.ReadString(212, 4);
+
+  ULO nextPartition = PartitionList;
+  while (nextPartition != -1)
+  {
+    RDBPartition *partition = new RDBPartition();
+    partition->ReadFromFile(reader, nextPartition, BlockSize);
+    partition->Log();
+    Partitions.push_back(partition);
+    nextPartition = partition->Next;
+  }
 
   ULO nextFilesystemHeader = FilesystemHeaderList;
   while (nextFilesystemHeader != -1)
   {
-    RDBFileSystemHeader *filesystemHeader = new RDBFileSystemHeader();
-    filesystemHeader->ReadFromFile(F, nextFilesystemHeader, BlockSize);
-    filesystemHeader->Log();
-    FilesystemHeaders.push_back(filesystemHeader);
-    nextFilesystemHeader = filesystemHeader->Next;
+    RDBFileSystemHeader *fileSystemHeader = new RDBFileSystemHeader();
+    fileSystemHeader->ReadFromFile(reader, nextFilesystemHeader, BlockSize);
+    fileSystemHeader->Log();
+    FileSystemHeaders.push_back(fileSystemHeader);
+    nextFilesystemHeader = fileSystemHeader->Next;
   }
 }
 
@@ -277,15 +371,15 @@ void RDBHeader::Log()
 {
   fellowAddLog("RDB Hardfile\n");
   fellowAddLog("-----------------------------------------\n");
-  fellowAddLog("0   - id:                     %.4s\n", Id);
+  fellowAddLog("0   - id:                     %s\n", ID.c_str());
   fellowAddLog("4   - size in longs:          %u\n", SizeInLongs);
-  fellowAddLog("8   - checksum:               %d\n", CheckSum);
-  fellowAddLog("12  - host id:                %u\n", HostId);
+  fellowAddLog("8   - checksum:               %.8X\n", CheckSum);
+  fellowAddLog("12  - host id:                %u\n", HostID);
   fellowAddLog("16  - block size:             %u\n", BlockSize);
   fellowAddLog("20  - flags:                  %X\n", Flags);
-  fellowAddLog("24  - bad block list:         %X\n", BadBlockList);
-  fellowAddLog("28  - partition list:         %X\n", PartitionList);
-  fellowAddLog("32  - filesystem header list: %X\n", FilesystemHeaderList);
+  fellowAddLog("24  - bad block list:         %d\n", BadBlockList);
+  fellowAddLog("28  - partition list:         %d\n", PartitionList);
+  fellowAddLog("32  - filesystem header list: %d\n", FilesystemHeaderList);
   fellowAddLog("36  - drive init code:        %X\n", DriveInitCode);
   fellowAddLog("Physical drive characteristics:---------\n");
   fellowAddLog("64  - cylinders:              %u\n", Cylinders);
@@ -297,27 +391,27 @@ void RDBHeader::Log()
   fellowAddLog("100 - reduced write:          %u\n", ReducedWrite);
   fellowAddLog("104 - step rate:              %u\n", StepRate);
   fellowAddLog("Logical drive characteristics:----------\n");
-  fellowAddLog("128 - RDB block low:          %u\n", RdbBlockLow);
-  fellowAddLog("132 - RDB block high:         %u\n", RdbBlockHigh);
+  fellowAddLog("128 - RDB block low:          %u\n", RDBBlockLow);
+  fellowAddLog("132 - RDB block high:         %u\n", RDBBlockHigh);
   fellowAddLog("136 - low cylinder:           %u\n", LowCylinder);
   fellowAddLog("140 - high cylinder:          %u\n", HighCylinder);
   fellowAddLog("144 - cylinder blocks:        %u\n", CylinderBlocks);
   fellowAddLog("148 - auto park seconds:      %u\n", AutoParkSeconds);
   fellowAddLog("152 - high RDSK block:        %u\n", HighRDSKBlock);
   fellowAddLog("Drive identification:-------------------\n");
-  fellowAddLog("160 - disk vendor:            %.8s\n", DiskVendor);
-  fellowAddLog("168 - disk product:           %.16s\n", DiskProduct);
-  fellowAddLog("184 - disk revision:          %.4s\n", DiskRevision);
-  fellowAddLog("188 - controller vendor:      %.8s\n", ControllerVendor);
-  fellowAddLog("196 - controller product:     %.16s\n", ControllerProduct);
-  fellowAddLog("212 - controller revision:    %.4s\n", ControllerRevision);
+  fellowAddLog("160 - disk vendor:            %.8s\n", DiskVendor.c_str());
+  fellowAddLog("168 - disk product:           %.16s\n", DiskProduct.c_str());
+  fellowAddLog("184 - disk revision:          %.4s\n", DiskRevision.c_str());
+  fellowAddLog("188 - controller vendor:      %.8s\n", ControllerVendor.c_str());
+  fellowAddLog("196 - controller product:     %.16s\n", ControllerProduct.c_str());
+  fellowAddLog("212 - controller revision:    %.4s\n", ControllerRevision.c_str());
   fellowAddLog("-----------------------------------------\n\n");
 }
 
-RDBHeader* RDBHandler::GetDriveInformation(FILE *F)
+RDBHeader* RDBHandler::GetDriveInformation(RDBFileReader& reader)
 {
   RDBHeader* rdb = new RDBHeader();
-  rdb->ReadFromFile(F);
+  rdb->ReadFromFile(reader);
   rdb->Log();
   return rdb;
 }
