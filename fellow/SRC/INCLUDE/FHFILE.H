@@ -14,7 +14,7 @@ typedef enum
   FHFILE_HDF = 1
 } fhfile_status;
 
-typedef struct
+struct HardfileDevice
 {
   STR filename[256]; /* Config settings from here and down */
   BOOLE readonly_original;
@@ -29,31 +29,67 @@ typedef struct
   fhfile_status status;
   FILE *F;
   ULO size;
-  bool hasRigidDiskBlock;
+  bool hasRDB;
   RDBHeader *rdb;
   ULO lowCylinder;
   ULO highCylinder;
-} fhfile_dev;
+};
+
+struct HardfileMountListEntry
+{
+  int DeviceIndex;
+  int PartitionIndex;
+  string Name;
+  ULO NameAddress;
+
+  HardfileMountListEntry(int deviceIndex, int partitionIndex, const string& name)
+    : DeviceIndex(deviceIndex), PartitionIndex(partitionIndex), Name(name), NameAddress(0)
+  {
+  }
+};
+
+struct HardfileFileSystemEntry
+{
+  RDBFileSystemHeader *Header;
+  ULO SegListAddress;
+
+  bool IsOlderOrSameFileSystemVersion(ULO DOSType, ULO version);
+
+  bool IsDOSType(ULO DOSType);
+  bool IsOlderVersion(ULO version);
+  bool IsOlderOrSameVersion(ULO version);
+
+  ULO GetDOSType();
+  ULO GetVersion();
+
+  HardfileFileSystemEntry(RDBFileSystemHeader *header, ULO segListAddress);
+};
 
 class HardfileHandler
 {
 private:
-  fhfile_dev _devs[FHFILE_MAX_DEVICES];
-  vector<RDBFileSystemHeader*> _rdb_filesystems;
+  HardfileDevice _devices[FHFILE_MAX_DEVICES];
+  vector<HardfileFileSystemEntry> _fileSystems;
+  vector<HardfileMountListEntry> _mountList;
   ULO _romstart;
   ULO _bootcode;
   ULO _configdev;
+  ULO _fsname;
   UBY _rom[65536];
   BOOLE _enabled;
 
   bool HasZeroDevices();
 
-
+  void CreateMountList();
+  string MakeDeviceName(int no);
+  string MakeDeviceName(const string& preferredName, int no);
+  bool PreferredNameExists(const string& preferredName);
   int FindOlderOrSameFileSystemVersion(ULO dosType, ULO version);
-  void AddFileSystemsFromRdb(fhfile_dev *device);
+  HardfileFileSystemEntry *GetFileSystemForDOSType(ULO dosType);
+  void AddFileSystemsFromRdb(HardfileDevice& device);
   void AddFileSystemsFromRdb();
   void EraseOlderOrSameFileSystemVersion(ULO dosType, ULO version);
-  void SetPhysicalGeometryFromRigidDiskBlock(fhfile_dev *fhfile);
+  void SetPhysicalGeometryFromRDB(HardfileDevice *fhfile);
   void InitializeHardfile(ULO index);
 
   void SetLed(bool state);
@@ -77,6 +113,8 @@ private:
   void DoGetRDBFileSystemHunkSize();
   void DoRelocateHunk();
   void DoInitializeRDBFileSystemEntry();
+  void DoPatchDOSDeviceNode();
+  void DoLogAvailableFileSystems();
 
   string LogGetStringFromMemory(ULO address);
   void DoLogAvailableResources();
@@ -84,7 +122,8 @@ private:
   void DoLogOpenResourceResult();
   void DoRemoveRDBFileSystemsAlreadySupportedBySystem();
 
-  void MakeDOSDevPacketForPlainHardfile(ULO devno, ULO unitnameptr, ULO devnameptr);
+  void MakeDOSDevPacketForPlainHardfile(const HardfileMountListEntry& partition, ULO deviceNameAddress);
+  void MakeDOSDevPacketForRDBPartition(const HardfileMountListEntry& partition, ULO deviceNameAddress);
 
 public:
   // Autoconfig and ROM memory
@@ -101,12 +140,12 @@ public:
   void SetEnabled(BOOLE enabled);
   BOOLE GetEnabled();
   void Clear();
-  bool CompareHardfile(fhfile_dev hardfile, ULO index);
-  void SetHardfile(fhfile_dev hardfile, ULO index);
+  bool CompareHardfile(HardfileDevice hardfile, ULO index);
+  void SetHardfile(HardfileDevice hardfile, ULO index);
   BOOLE RemoveHardfile(ULO index);
 
   // UI helper function
-  bool Create(fhfile_dev hfile);
+  bool Create(HardfileDevice hfile);
 
   // Global events
   void HardReset();

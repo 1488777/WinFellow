@@ -585,7 +585,7 @@ const STR *memory_kickimage_versionstrings[14] = {
     return memory_dmemcounter + MEMORY_DMEM_OFFSET;
   }
 
-  void memoryDmemSetString(STR *st)
+  void memoryDmemSetString(const STR *st)
   {
     strcpy((STR *) (memory_dmem + memory_dmemcounter), st);
     memory_dmemcounter += (ULO) strlen(st) + 1;

@@ -2866,7 +2866,7 @@ INT_PTR CALLBACK wguiHardfileCreateDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wP
     case IDOK:
       {
         STR stmp[32];
-        fhfile_dev hfile;
+        HardfileDevice hfile;
         STR fname[CFG_FILENAME_LENGTH];
 
         ccwEditGetText(hwndDlg, IDC_CREATE_HARDFILE_NAME, hfile.filename, 256);

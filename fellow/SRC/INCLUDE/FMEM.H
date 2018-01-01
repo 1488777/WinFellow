@@ -55,7 +55,7 @@ extern void memoryDmemSetByte(UBY data);
 extern void memoryDmemSetWord(UWO data);
 extern void memoryDmemSetLong(ULO data);
 extern void memoryDmemSetLongNoCounter(ULO data, ULO offset);
-extern void memoryDmemSetString(STR *data);
+extern void memoryDmemSetString(const STR *data);
 extern void memoryDmemSetCounter(ULO val);
 extern ULO memoryDmemGetCounter(void);
 extern void memoryDmemClear(void);

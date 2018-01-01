@@ -198,11 +198,6 @@ void RDBFileSystemHeader::Log()
   fellowAddLog("76 - global vec:             %d\n\n", DnGlobalVec);
 }
 
-bool RDBFileSystemHeader::IsOlderOrSameFileSystemVersion(ULO dosType, ULO version)
-{
-  return DOSType == dosType && Version <= version;
-}
-
 RDBFileSystemHeader::RDBFileSystemHeader() :
   SizeInLongs(0),
   CheckSum(0),
@@ -263,6 +258,16 @@ void RDBPartition::ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO 
   Baud = reader.ReadULO(index + 196);
   Control = reader.ReadULO(index + 200);
   Bootblocks = reader.ReadULO(index + 204);
+}
+
+bool RDBPartition::IsAutomountable()
+{
+  return (Flags & 2) == 0;
+}
+
+bool RDBPartition::IsBootable()
+{
+  return (Flags & 1) == 1;
 }
 
 void RDBPartition::Log()

@@ -23,16 +23,14 @@ FileSystemResourceExists:
 
 	bsr		RemoveRDBFileSystemsAlreadySupportedBySystem
 	bsr		AddRDBFileSystemEntries
+	bsr		LogAvailableFileSystems
 
 EndOfLoadRDBFileSystems:
 
 	; -----------------------------------------------------
 	; Make dos dev packets
-	; Input D0 - FileSysEntry pointer
 
 MakeDosDevPackages:
-	move.l	d0, -(a7)			; Save FileSysEntry
-
 	move.l	$4.w, a6			; Open expansion.library, ref in a4
 	lea		explibname(pc), a1
 	jsr		-408(a6)
@@ -64,26 +62,8 @@ loop:
 	jsr		-144(a6)
 	exg		a4, a6				; Keep expansion.library so we can close it later
 
-	move.l	d0, a3				; New device node in a3
-	moveq	#0, d0
-	move.l	d0, 8(a3)			; dn_Task = 0
-	move.l	d0, 16(a3)			; dn_Handler = 0
-	move.l	d0, 32(a3)			; dn_SegList = 0
-	move.l	(a7)+, a2			; Get FileSysEntry, TODO check patchflags
-	cmp.l	#0, a2
-	beq.s	SkipPatch
-
-	move.l	42(a2), d0
-	move.l	d0, 20(a3)			; dn_StackSize
-
-	move.l	54(a2), d0
-	move.l	d0, 32(a3)			; dn_SegList
-
-	move.l	58(a2), d0
-	move.l	d0, 36(a3)			; dn_GlobalVec
-
-SkipPatch:
-	;move.l	#-1, 36(a3)			; dn_GlobalVec
+	bsr		PatchDOSDeviceNode	; D0 - DOSNode, A5 - packet
+	move.l	d0, a3
 
 	moveq.l	#20, d0				; Alloc memory for bootnode
 	bsr		AllocMem
@@ -128,12 +108,17 @@ LogOpenResourceResult:
 
 ;--------------------------------------------------------------------
 LogAvailableResources:
-	move.l	#$000200a2, $f40000	; fhfileDoLogAvailableResources() - No input, reads resources from $150(execbase)
+	move.l	#$000200a2, $f40000	; No input, reads resources from $150(execbase)
+	rts
+
+;--------------------------------------------------------------------
+LogAvailableFileSystems:
+	move.l	#$000200a3, $f40000	; Input D0 FileSystem.resource
 	rts
 
 ;--------------------------------------------------------------------
 GetRDBFileSystemCount:
-	move.l	#$00020001, $f40000	; fhfileDoGetFilesystemCount() - Returns D0 FileSystem count
+	move.l	#$00020001, $f40000	; Returns D0 FileSystem count
 	rts
 
 ;--------------------------------------------------------------------
@@ -148,17 +133,22 @@ GetRDBFileSystemHunkSize:
 
 ;--------------------------------------------------------------------
 RelocateHunk:
-	move.l	#$00020004, $f40000	; Input D1 FileSystem index, D2 Hunk index
+	move.l	#$00020004, $f40000	; Input D0 Memory allocated for hunk, D1 FileSystem index, D2 Hunk index
 	rts
 
 ;--------------------------------------------------------------------
 InitializeRDBFileSystemEntry:
-	move.l	#$00020005, $f40000	; fhfileDoInitializeFileSystemEntry() - Input D0 Pointer to allocated memory
+	move.l	#$00020005, $f40000	; Input D0 Pointer to allocated memory
 	rts
 
 ;--------------------------------------------------------------------
 RemoveRDBFileSystemsAlreadySupportedBySystem:
-	move.l	#$00020006, $f40000	; fhfileDoRemoveRDBFileSystemsAlreadySupportedBySystem() - Input D0 Pointer to FileSystem.resource
+	move.l	#$00020006, $f40000	; Input D0 Pointer to FileSystem.resource
+	rts
+
+;--------------------------------------------------------------------
+PatchDOSDeviceNode:
+	move.l	#$00020007, $f40000	; Input D0 Pointer to DOS device node
 	rts
 
 ;--------------------------------------------------------------------
@@ -205,10 +195,9 @@ OpenFileSystemResource:
 
 ;--------------------------------------------------------------------
 ; Input D1 - filesystem index
-; Output D0 - first hunk
 RelocateHunks:
 	bsr		GetRDBFileSystemHunkCount
-	move.l	d0, d4			; Hunk count in D2
+	move.l	d0, d4			; Hunk count in D4
 
 	tst.l	d4				; No hunks?
 	beq		RelocateEnd
@@ -234,38 +223,29 @@ RelocateEnd:
 
 ;--------------------------------------------------------------------
 ; Input A0 - FileSystem resource pointer
-; Output D0 - FileSysEntry pointer
+; Input D1 - FileSystem index
 AddRDBFileSystemEntry:
 	move.l	a0, -(a7)		; Save FileSystem resource pointer
-	bsr	RelocateHunks
-	move.l	d0, -(a7)		; Save pointer to first hunk
+	move.l	d1, -(a7)		; Save FileSystem index
+	bsr		RelocateHunks	; SegList recorded by native code
 
 	move.l	#190, d0		; Alloc mem for FileSysEntry, is this size correct?
 	bsr		AllocMem		; D0 - Pointer to FileSysEntry
 
-	bsr		InitializeRDBFileSystemEntry
+	move.l	(a7)+, d1		; Restore FileSystem index
+	bsr		InitializeRDBFileSystemEntry	; Input D0 - FileSysEntry, D1 - FileSystem index
 
-	move.l	(a7)+, d7		; Restore pointer to first hunk
-	move.l	d0, a1			; FileSysEntry to a1
-	addq.l	#4, d7
-	lsr.l	#2, d7
-	move.l	d7, 54(a1)		; SegList in FileSysEntry
-
-	lea		fsname(pc), a5	; Set node name
-	move.l	a5, 10(a4)
+	move.l	$4, a6			; Add FileSysEntry to filesystem list
+	move.l	(a7), a0		; Get FileSystem resource pointer
+	lea		18(a0), a0		; Pointer to FileSystem list in a0
+	move.l	d0, a1			; Pointer to FileSysEntry in a1
+	jsr		-240(a6)		; AddHead()
 
 	move.l	(a7)+, a0		; Restore FileSystem resource pointer
-	move.l	a1, -(a7)		; Save FileSysEntry
-	move.l	$4, a6			; Add FileSysEntry to filesystem list
-	lea		18(a0), a0		; Pointer to FileSystem list in a0
-							; Pointer to FileSysEntry already in a1
-	jsr		-240(a6)		; AddHead()
-	move.l	(a7)+, d0		; Return FileSysEntry
 	rts
 		
 ;--------------------------------------------------------------------
 ; Input D0 - FileSystem resource pointer
-; Output D0 - FileSysEntry pointer
 AddRDBFileSystemEntries:
 	move.l	d0, a0
 	bsr		GetRDBFileSystemCount
@@ -289,6 +269,5 @@ EndOfAddRDBFileSystemEntries:
 explibname:	dc.b "expansion.library",0
 fsresourcename:	dc.b "FileSystem.resource",0
 devicename: dc.b "Fellow hardfile device",0
-fsname: dc.b "Fellow hardfile RDB fs",0
 even
 EndOfCode:

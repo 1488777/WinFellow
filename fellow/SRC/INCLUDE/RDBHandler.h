@@ -77,7 +77,6 @@ struct RDBFileSystemHeader
 
   RDBFileSystemHandler FileSystemHandler;
 
-  bool IsOlderOrSameFileSystemVersion(ULO DOSType, ULO version);
   void ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize);
   void Log();
 
@@ -120,6 +119,9 @@ struct RDBPartition
   ULO Baud;
   ULO Control;
   ULO Bootblocks;
+
+  bool IsAutomountable();
+  bool IsBootable();
 
   void ReadFromFile(RDBFileReader& reader, ULO blockChainStart, ULO blockSize);
   void Log();

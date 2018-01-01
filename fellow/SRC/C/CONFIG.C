@@ -2416,7 +2416,7 @@ BOOLE cfgManagerConfigurationActivate(cfgManager *configmanager)
   {
     for (i = 0; i < cfgGetHardfileCount(config); i++)
     {
-      fhfile_dev fhardfile;
+      HardfileDevice fhardfile;
       cfg_hardfile hardfile = cfgGetHardfile(config, i);
       fhardfile.bytespersector_original = hardfile.bytespersector;
       fhardfile.readonly_original = hardfile.readonly;
